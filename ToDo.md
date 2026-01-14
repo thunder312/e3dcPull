@@ -1,0 +1,5 @@
+- Save login credentials
+- csv-Download geht nicht
+- benutzer GUI für Datumszeitraum fertig stellen
+- eventuell Anzeige für aktuellen schritt im python skript anzeigen oder Toasts
+- login gegen unberechtigten Zugriff
