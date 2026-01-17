@@ -56,7 +56,8 @@ class CredentialManager:
     def save_credentials(
         username: str,
         password: str,
-        dashboard_url: str,
+        ip_address: str,
+        rscp_key: str,
         master_password: str
     ) -> bool:
         """
@@ -65,7 +66,8 @@ class CredentialManager:
         Args:
             username: E3DC Benutzername
             password: E3DC Passwort
-            dashboard_url: E3DC Dashboard URL
+            ip_address: IP-Adresse des E3DC-Systems
+            rscp_key: RSCP-Passwort
             master_password: Master-Passwort für Verschlüsselung
 
         Returns:
@@ -83,7 +85,8 @@ class CredentialManager:
             credentials_data = {
                 "username": username,
                 "password": password,
-                "dashboard_url": dashboard_url
+                "ip_address": ip_address,
+                "rscp_key": rscp_key
             }
             credentials_json = json.dumps(credentials_data)
 
@@ -118,7 +121,7 @@ class CredentialManager:
             master_password: Master-Passwort für Entschlüsselung
 
         Returns:
-            Dictionary mit username, password, dashboard_url oder None bei Fehler
+            Dictionary mit username, password, ip_address, rscp_key oder None bei Fehler
         """
         try:
             if not CREDENTIALS_FILE.exists():
@@ -153,6 +156,7 @@ class CredentialManager:
     def migrate_from_config() -> Optional[Dict[str, str]]:
         """
         Liest Credentials aus der alten config.json (für Migration).
+        DEPRECATED: Wird für alte Konfigurationen verwendet.
 
         Returns:
             Dictionary mit Credentials oder None falls nicht vorhanden
@@ -170,12 +174,13 @@ class CredentialManager:
 
             e3dc_config = config["e3dc"]
 
-            # Prüfen ob alle erforderlichen Felder vorhanden sind
-            if all(key in e3dc_config for key in ["username", "password", "dashboard_url"]):
+            # Prüfen ob alle erforderlichen Felder vorhanden sind (neues Format)
+            if all(key in e3dc_config for key in ["username", "password", "ip_address", "rscp_key"]):
                 return {
                     "username": e3dc_config["username"],
                     "password": e3dc_config["password"],
-                    "dashboard_url": e3dc_config["dashboard_url"]
+                    "ip_address": e3dc_config["ip_address"],
+                    "rscp_key": e3dc_config["rscp_key"]
                 }
 
             return None
@@ -261,33 +266,18 @@ def main():
             print("\nCredentials erfolgreich geladen:")
             print(f"  Username: {credentials['username']}")
             print(f"  Password: {'*' * len(credentials['password'])}")
-            print(f"  Dashboard URL: {credentials['dashboard_url']}")
+            print(f"  IP-Adresse: {credentials.get('ip_address', 'N/A')}")
+            print(f"  RSCP-Key: {'*' * len(credentials.get('rscp_key', ''))}")
         else:
             print("Fehler beim Laden der Credentials.")
             sys.exit(1)
     else:
         print("Keine Credentials gefunden. Erstelle neue...")
 
-        # Migration prüfen
-        old_credentials = CredentialManager.migrate_from_config()
-        if old_credentials:
-            print("\nCredentials aus config.json gefunden!")
-            print(f"  Username: {old_credentials['username']}")
-            print(f"  Dashboard URL: {old_credentials['dashboard_url']}")
-            migrate = input("\nDiese Credentials migrieren? (j/n): ")
-
-            if migrate.lower() == "j":
-                username = old_credentials["username"]
-                password = old_credentials["password"]
-                dashboard_url = old_credentials["dashboard_url"]
-            else:
-                username = input("\nE3DC Benutzername: ")
-                password = input("E3DC Passwort: ")
-                dashboard_url = input("Dashboard URL: ")
-        else:
-            username = input("E3DC Benutzername: ")
-            password = input("E3DC Passwort: ")
-            dashboard_url = input("Dashboard URL: ")
+        username = input("E3DC Benutzername: ")
+        password = input("E3DC Passwort: ")
+        ip_address = input("E3DC IP-Adresse: ")
+        rscp_key = input("RSCP-Passwort: ")
 
         master_pw = input("\nMaster-Passwort erstellen (min. 8 Zeichen): ")
         if len(master_pw) < 8:
@@ -299,15 +289,8 @@ def main():
             print("Passwörter stimmen nicht überein!")
             sys.exit(1)
 
-        if CredentialManager.save_credentials(username, password, dashboard_url, master_pw):
+        if CredentialManager.save_credentials(username, password, ip_address, rscp_key, master_pw):
             print("\nCredentials erfolgreich gespeichert!")
-
-            # Migration: Credentials aus config.json entfernen
-            if old_credentials:
-                if CredentialManager.remove_credentials_from_config():
-                    print("config.json wurde bereinigt (Backup erstellt: config.json.bak)")
-                else:
-                    print("Warnung: config.json konnte nicht bereinigt werden")
         else:
             print("Fehler beim Speichern!")
             sys.exit(1)

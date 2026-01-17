@@ -62,15 +62,34 @@
           </div>
 
           <div class="form-group">
-            <label for="setup-dashboard-url">Dashboard URL</label>
+            <label for="setup-ip-address">E3DC IP-Adresse</label>
             <input
-              type="url"
-              id="setup-dashboard-url"
-              name="dashboard_url"
+              type="text"
+              id="setup-ip-address"
+              name="ip_address"
               required
-              placeholder="https://my.e3dc.com/dashboard/overview/..."
+              placeholder="z.B. 192.168.1.100"
+              pattern="^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$"
+              autocomplete="off"
+              data-lpignore="true"
+              data-form-type="other"
             >
-            <small>Die URL zu Ihrem E3DC Dashboard</small>
+            <small>Die lokale IP-Adresse Ihres E3DC-Systems</small>
+          </div>
+
+          <div class="form-group">
+            <label for="setup-rscp-key">RSCP-Passwort</label>
+            <input
+              type="text"
+              id="setup-rscp-key"
+              name="rscp_key"
+              required
+              placeholder="RSCP-Passwort"
+              autocomplete="off"
+              data-lpignore="true"
+              data-form-type="other"
+            >
+            <small>Zu finden unter: Hauptseite &rarr; Personalisieren &rarr; RSCP-Passwort</small>
           </div>
 
           <div class="divider"></div>
@@ -232,12 +251,13 @@
         this.setupMode.classList.remove('hidden');
         this.unlockMode.classList.add('hidden');
 
-        // Vorausfüllen mit Migrations-Daten
+        // Vorausfüllen mit Migrations-Daten (falls vorhanden)
         if (migrationData) {
           document.getElementById('setup-username').value = migrationData.username || '';
-          document.getElementById('setup-dashboard-url').value = migrationData.dashboard_url || '';
-
-          this.showInfo('Zugangsdaten aus config.json gefunden. Bitte erstellen Sie ein Master-Passwort.');
+          if (migrationData.ip_address) {
+            document.getElementById('setup-ip-address').value = migrationData.ip_address;
+          }
+          this.showInfo('Zugangsdaten gefunden. Bitte vervollständigen Sie die Eingabe.');
         }
       }
 
@@ -257,7 +277,8 @@
         const data = {
           username: formData.get('username'),
           password: formData.get('password'),
-          dashboard_url: formData.get('dashboard_url'),
+          ip_address: formData.get('ip_address'),
+          rscp_key: formData.get('rscp_key'),
           master_password: formData.get('master_password')
         };
 

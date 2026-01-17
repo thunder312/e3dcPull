@@ -240,7 +240,7 @@ class E3DCDashboard {
       const rawData = json.data || json;
 
       if (!Array.isArray(rawData)) {
-        console.error('Ungültiges JSON-Format');
+        console.error('Ungültiges JSON-Format - rawData:', rawData);
         return;
       }
 
@@ -249,6 +249,8 @@ class E3DCDashboard {
         pv_power: entry.pv_power || entry.pvPower || 0,
         battery_power: entry.battery_power || entry.batteryPower || 0,
         grid_power: entry.grid_power || entry.gridPower || 0,
+        grid_draw: entry.grid_draw || entry.gridConsumption || 0,
+        grid_feed: entry.grid_feed || entry.gridFeedIn || 0,
         consumption: entry.consumption || entry.homePower || 0,
         battery_soc: entry.battery_soc || entry.batterySoc || 0
       })).filter(e => !isNaN(e.timestamp.getTime()));
@@ -859,19 +861,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Auto-Load Funktion zur Klasse hinzufügen
 E3DCDashboard.prototype.autoLoadCSV = async function() {
-  const csvPath = 'data/e3dc_data.csv';
-
+  // Automatisch die letzten 7 Tage vom E3DC laden
   try {
-    const response = await fetch(csvPath);
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 7);
+
+    const startStr = startDate.toISOString().split('T')[0];
+    const endStr = endDate.toISOString().split('T')[0];
+
+    // Datumsfelder im UI setzen
+    const dateFromInput = document.getElementById('date-from');
+    const dateToInput = document.getElementById('date-to');
+    if (dateFromInput) dateFromInput.value = startStr;
+    if (dateToInput) dateToInput.value = endStr;
+
+    const response = await fetch(`/api/data/history?start_date=${startStr}&end_date=${endStr}&resolution=day`);
+
     if (response.ok) {
-      const content = await response.text();
-      console.log('CSV automatisch geladen:', csvPath);
-      this.parseCSV(content);
-    } else {
-      console.log('Keine CSV gefunden unter:', csvPath);
+      const data = await response.json();
+      if (data && !data.error && data.data && data.data.length > 0) {
+        this.parseJSON(JSON.stringify(data));
+        this.showToast(`${data.data.length} Tage automatisch geladen`, 'success');
+      }
     }
   } catch (err) {
-    console.log('Auto-Load fehlgeschlagen (normal wenn lokal ohne Server):', err.message);
+    // Kein Fehler anzeigen - beim Start ist es normal wenn keine Daten vorhanden sind
+    console.log('Auto-Load: Keine Daten geladen', err.message);
   }
 };
 
@@ -947,10 +963,11 @@ E3DCDashboard.prototype.loadDataFromPortal = async function() {
       return;
     }
 
-    // Daten verarbeiten
-    this.parseJSON(JSON.stringify({ data: data }));
+    // Daten verarbeiten - API gibt bereits { data: [...] } zurück
+    const dataArray = data.data || data;
+    this.parseJSON(JSON.stringify({ data: dataArray }));
 
-    const dataCount = Array.isArray(data) ? data.length : (data.data ? data.data.length : 0);
+    const dataCount = Array.isArray(dataArray) ? dataArray.length : 0;
     this.showToast(`✓ ${dataCount} Datensätze erfolgreich geladen`, 'success');
 
   } catch (err) {

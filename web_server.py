@@ -55,6 +55,18 @@ def open_browser(host, port):
     Timer(1.5, lambda: webbrowser.open(url)).start()
 
 
+# ========== CACHE CONTROL ==========
+
+@app.after_request
+def add_cache_control(response):
+    """Verhindert Browser-Caching für API-Antworten"""
+    if request.path.startswith('/api/'):
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
+
+
 # ========== ROUTES ==========
 
 @app.route('/')
@@ -112,7 +124,8 @@ def credential_setup():
         {
             username: str,
             password: str,
-            dashboard_url: str,
+            ip_address: str,
+            rscp_key: str,
             master_password: str
         }
 
@@ -123,7 +136,7 @@ def credential_setup():
         data = request.get_json()
 
         # Validierung
-        required_fields = ['username', 'password', 'dashboard_url', 'master_password']
+        required_fields = ['username', 'password', 'ip_address', 'rscp_key', 'master_password']
         if not all(field in data for field in required_fields):
             return jsonify({
                 "success": False,
@@ -134,7 +147,8 @@ def credential_setup():
         success = CredentialManager.save_credentials(
             username=data['username'],
             password=data['password'],
-            dashboard_url=data['dashboard_url'],
+            ip_address=data['ip_address'],
+            rscp_key=data['rscp_key'],
             master_password=data['master_password']
         )
 
@@ -144,23 +158,22 @@ def credential_setup():
                 "error": "Fehler beim Speichern der Credentials"
             }), 500
 
-        # Migration: Credentials aus config.json entfernen
-        if CredentialManager.migrate_from_config():
-            CredentialManager.remove_credentials_from_config()
-
         # Session setzen
         session['authenticated'] = True
         session['credentials'] = {
             "username": data['username'],
             "password": data['password'],
-            "dashboard_url": data['dashboard_url']
+            "ip_address": data['ip_address'],
+            "rscp_key": data['rscp_key']
         }
 
         # E3DC Fetcher initialisieren
         global _e3dc_fetcher
         _e3dc_fetcher = E3DCFetcher(
             username=data['username'],
-            password=data['password']
+            password=data['password'],
+            ip_address=data['ip_address'],
+            rscp_key=data['rscp_key']
         )
 
         return jsonify({
@@ -219,7 +232,9 @@ def credential_unlock():
         global _e3dc_fetcher
         _e3dc_fetcher = E3DCFetcher(
             username=credentials['username'],
-            password=credentials['password']
+            password=credentials['password'],
+            ip_address=credentials.get('ip_address', ''),
+            rscp_key=credentials.get('rscp_key', '')
         )
 
         return jsonify({
@@ -294,13 +309,15 @@ def get_live_data():
 
             _e3dc_fetcher = E3DCFetcher(
                 username=credentials['username'],
-                password=credentials['password']
+                password=credentials['password'],
+                ip_address=credentials.get('ip_address', ''),
+                rscp_key=credentials.get('rscp_key', '')
             )
 
         # Login falls noch nicht eingeloggt
         if not _e3dc_fetcher.logged_in:
             if not _e3dc_fetcher.login():
-                return jsonify({"error": "Login fehlgeschlagen"}), 500
+                return jsonify({"error": "Verbindung fehlgeschlagen"}), 500
 
         # Live-Daten abrufen
         live_data = _e3dc_fetcher.fetch_live_data()
@@ -337,13 +354,15 @@ def get_history_data():
 
             _e3dc_fetcher = E3DCFetcher(
                 username=credentials['username'],
-                password=credentials['password']
+                password=credentials['password'],
+                ip_address=credentials.get('ip_address', ''),
+                rscp_key=credentials.get('rscp_key', '')
             )
 
         # Login falls noch nicht eingeloggt
         if not _e3dc_fetcher.logged_in:
             if not _e3dc_fetcher.login():
-                return jsonify({"error": "Login fehlgeschlagen"}), 500
+                return jsonify({"error": "Verbindung fehlgeschlagen"}), 500
 
         # Parameter auslesen
         start_date = request.args.get('start_date')
