@@ -120,26 +120,30 @@ class E3DCDashboard {
   }
 
   /**
-   * Parse deutsches Datum: DD.MM.YYYY HH:MM:SS
+   * Parse deutsches Datum: DD.MM.YYYY oder DD.MM.YYYY HH:MM:SS
    */
   parseGermanDate(dateStr) {
     if (!dateStr) return null;
 
-    // Format: "12.01.2026 00:00:00"
-    const parts = dateStr.trim().split(' ');
-    if (parts.length !== 2) return null;
+    // Komma durch Leerzeichen ersetzen und mehrfache Leerzeichen entfernen
+    const normalized = dateStr.trim().replace(',', ' ').replace(/\s+/g, ' ');
+    const parts = normalized.split(' ');
 
     const dateParts = parts[0].split('.');
-    const timeParts = parts[1].split(':');
-
-    if (dateParts.length !== 3 || timeParts.length !== 3) return null;
+    if (dateParts.length !== 3) return null;
 
     const day = parseInt(dateParts[0], 10);
     const month = parseInt(dateParts[1], 10) - 1; // Monate sind 0-basiert
     const year = parseInt(dateParts[2], 10);
-    const hour = parseInt(timeParts[0], 10);
-    const minute = parseInt(timeParts[1], 10);
-    const second = parseInt(timeParts[2], 10);
+
+    // Zeit ist optional
+    let hour = 0, minute = 0, second = 0;
+    if (parts.length >= 2) {
+      const timeParts = parts[1].split(':');
+      hour = timeParts.length >= 1 ? parseInt(timeParts[0], 10) : 0;
+      minute = timeParts.length >= 2 ? parseInt(timeParts[1], 10) : 0;
+      second = timeParts.length >= 3 ? parseInt(timeParts[2], 10) : 0;
+    }
 
     return new Date(year, month, day, hour, minute, second);
   }
@@ -161,30 +165,42 @@ class E3DCDashboard {
     const delimiter = headerLine.includes(';') ? ';' : ',';
     const headers = headerLine.split(delimiter).map(h => h.trim().replace(/^"|"$/g, ''));
 
-    // Spalten-Mapping für E3DC-Format
-    const columnMap = {
-      timestamp: headers.findIndex(h => h.toLowerCase().includes('zeitstempel')),
-      soc: headers.findIndex(h => h.toLowerCase().includes('ladezustand')),
-      pv: headers.findIndex(h => h.toLowerCase().includes('solarproduktion')),
-      batteryCharge: headers.findIndex(h => h.toLowerCase().includes('batterie laden')),
-      batteryDischarge: headers.findIndex(h => h.toLowerCase().includes('batterie entladen')),
-      gridFeed: headers.findIndex(h => h.toLowerCase().includes('netzeinspeisung')),
-      gridDraw: headers.findIndex(h => h.toLowerCase().includes('netzbezug')),
-      consumption: headers.findIndex(h => h.toLowerCase().includes('hausverbrauch'))
+    // Spalten-Mapping für verschiedene CSV-Formate
+    const findColumn = (...patterns) => {
+      for (const pattern of patterns) {
+        const idx = headers.findIndex(h => h.toLowerCase().includes(pattern.toLowerCase()));
+        if (idx !== -1) return idx;
+      }
+      return -1;
     };
 
-    // Fallback für englische/generische Spalten
-    if (columnMap.timestamp === -1) {
-      columnMap.timestamp = headers.findIndex(h => h.toLowerCase().includes('timestamp'));
-    }
+    const columnMap = {
+      timestamp: findColumn('zeitstempel', 'timestamp', 'datum', 'date'),
+      soc: findColumn('batteriestand', 'ladezustand', 'soc', 'state of charge'),
+      pv: findColumn('pv-leistung', 'solarproduktion', 'pv_power', 'solar'),
+      batteryCharge: findColumn('batterie laden', 'battery_charge'),
+      batteryDischarge: findColumn('batterie entladen', 'battery_discharge'),
+      gridFeed: findColumn('netzeinspeisung', 'grid_feed', 'einspeisung'),
+      gridDraw: findColumn('netzbezug', 'grid_draw', 'bezug'),
+      consumption: findColumn('hausverbrauch', 'verbrauch', 'consumption')
+    };
 
     this.data = [];
+
+    // Prüfen ob Komma-CSV mit Komma im Timestamp (z.B. "10.1.2026, 00:00:00")
+    const hasTimestampComma = delimiter === ',' && headers.length === 6;
 
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
 
-      const values = line.split(delimiter).map(v => v.trim().replace(/^"|"$/g, ''));
+      let values = line.split(delimiter).map(v => v.trim().replace(/^"|"$/g, ''));
+
+      // Fix für Komma im Timestamp: "10.1.2026, 00:00:00" wird zu zwei Spalten
+      if (hasTimestampComma && values.length === 7 && values[1].includes(':')) {
+        // Timestamp zusammenfügen und Array korrigieren
+        values = [values[0] + ' ' + values[1], ...values.slice(2)];
+      }
 
       // Timestamp parsen
       let timestamp;
@@ -222,7 +238,10 @@ class E3DCDashboard {
 
     this.data.sort((a, b) => a.timestamp - b.timestamp);
 
-    console.log(`${this.data.length} Datensätze geladen`);
+    if (this.data.length === 0) {
+      this.showToast('Keine Daten in der CSV gefunden. Prüfen Sie das Format.', 'warning');
+      return;
+    }
 
     this.filterDataByPeriod();
     this.updateCharts();
@@ -231,6 +250,7 @@ class E3DCDashboard {
     // Live-Werte mit dem neuesten Datenpunkt aktualisieren
     if (this.data.length) {
       this.updateLiveValues(this.data[this.data.length - 1]);
+      this.showToast(`${this.data.length} Datensätze aus CSV geladen`, 'success');
     }
   }
 
@@ -984,19 +1004,21 @@ E3DCDashboard.prototype.saveDataAsCSV = function() {
   }
 
   try {
-    // CSV-Header
-    let csv = 'Zeitstempel,PV-Leistung (W),Hausverbrauch (W),Netzbezug (W),Netzeinspeisung (W),Batteriestand (%)\n';
+    // CSV-Header (Semikolon-getrennt für deutsche Excel-Kompatibilität)
+    let csv = 'Zeitstempel;PV-Leistung (W);Hausverbrauch (W);Netzbezug (W);Netzeinspeisung (W);Batteriestand (%)\n';
 
     // Daten als CSV-Zeilen
     this.data.forEach(entry => {
-      const timestamp = entry.timestamp.toLocaleString('de-DE');
+      // Datum formatieren: DD.MM.YYYY HH:MM:SS
+      const d = entry.timestamp;
+      const timestamp = `${d.getDate().toString().padStart(2,'0')}.${(d.getMonth()+1).toString().padStart(2,'0')}.${d.getFullYear()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}`;
       const pv = entry.pv_power || 0;
       const consumption = entry.consumption || 0;
       const gridDraw = entry.grid_draw || 0;
       const gridFeed = entry.grid_feed || 0;
       const soc = entry.battery_soc || 0;
 
-      csv += `${timestamp},${pv},${consumption},${gridDraw},${gridFeed},${soc}\n`;
+      csv += `${timestamp};${pv};${consumption};${gridDraw};${gridFeed};${soc}\n`;
     });
 
     // Download triggern
