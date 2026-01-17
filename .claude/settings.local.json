@@ -9,7 +9,11 @@
       "WebFetch(domain:docs.claude.com)",
       "WebFetch(domain:plugins.jetbrains.com)",
       "Bash(test:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(git status:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push)"
     ]
   }
 }
