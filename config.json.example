@@ -1,0 +1,11 @@
+{
+  "output": {
+    "csv_folder": "data",
+    "csv_filename": "e3dc_data.csv"
+  },
+  "server": {
+    "host": "localhost",
+    "port": 5000,
+    "auto_open_browser": true
+  }
+}
