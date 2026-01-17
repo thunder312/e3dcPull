@@ -25,8 +25,18 @@
 <body>
   <div class="dashboard">
     <header class="header">
-      <h1>E3DC Solar Dashboard</h1>
-      <p class="subtitle">Energiedaten-Visualisierung</p>
+      <div class="header-content">
+        <div class="header-title">
+          <h1>E3DC Solar Dashboard</h1>
+          <p class="subtitle">Energiedaten-Visualisierung</p>
+        </div>
+        <button id="logout-btn" class="logout-btn" title="Abmelden">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5-5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/>
+          </svg>
+          <span>Abmelden</span>
+        </button>
+      </div>
     </header>
 
     <!-- Live-Daten Karten -->
@@ -82,33 +92,75 @@
 
     <!-- Daten laden / speichern -->
     <section class="data-controls">
-      <div class="date-range-input">
-        <h3>Zeitraum auswählen</h3>
-        <div class="date-fields">
-          <div class="date-field">
-            <label for="date-from">Von:</label>
-            <input type="date" id="date-from" />
-          </div>
-          <div class="date-field">
-            <label for="date-to">Bis:</label>
-            <input type="date" id="date-to" />
-          </div>
+      <div class="control-card date-range-card">
+        <div class="card-header">
+          <svg class="card-header-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zM5 8V6h14v2H5zm2 4h10v2H7v-2z"/>
+          </svg>
+          <h3>Zeitraum auswählen</h3>
         </div>
-        <div class="date-actions">
-          <button id="load-data" class="btn btn-primary">Daten laden</button>
-          <button id="save-csv" class="btn btn-secondary">CSV speichern</button>
+        <div class="card-body">
+          <div class="date-fields">
+            <div class="date-field-group">
+              <label for="date-from">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/>
+                </svg>
+                Von
+              </label>
+              <input type="date" id="date-from" />
+            </div>
+            <div class="date-separator">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
+              </svg>
+            </div>
+            <div class="date-field-group">
+              <label for="date-to">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/>
+                </svg>
+                Bis
+              </label>
+              <input type="date" id="date-to" />
+            </div>
+          </div>
+          <div class="date-actions">
+            <button id="load-data" class="btn btn-primary">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67l2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2v9.67z"/>
+              </svg>
+              Daten laden
+            </button>
+            <button id="save-csv" class="btn btn-secondary">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6-.67l2.59-2.58L17 10.16l-5-5-5 5 1.41 1.41L11 8.99V19h2V8.99z"/>
+              </svg>
+              CSV speichern
+            </button>
+          </div>
         </div>
       </div>
 
-      <div class="upload-box">
-        <input type="file" id="csv-upload" accept=".csv,.json" />
-        <label for="csv-upload">
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/>
+      <div class="control-card upload-card">
+        <div class="card-header">
+          <svg class="card-header-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z"/>
           </svg>
-          <span>CSV/JSON Datei hochladen</span>
-          <small>oder Dateien hierher ziehen</small>
-        </label>
+          <h3>Datei hochladen</h3>
+        </div>
+        <div class="card-body">
+          <div class="upload-zone">
+            <input type="file" id="csv-upload" accept=".csv,.json" />
+            <label for="csv-upload" class="upload-label">
+              <svg class="upload-icon" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11zM8 15.01l1.41 1.41L11 14.84V19h2v-4.16l1.59 1.59L16 15.01 12.01 11z"/>
+              </svg>
+              <span class="upload-text">CSV/JSON Datei hochladen</span>
+              <small class="upload-hint">oder Dateien hierher ziehen</small>
+            </label>
+          </div>
+        </div>
       </div>
     </section>
 

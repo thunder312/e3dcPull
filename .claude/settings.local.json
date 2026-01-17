@@ -5,7 +5,10 @@
       "Bash(python:*)",
       "Bash(pip install:*)",
       "Bash(timeout:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "WebFetch(domain:docs.claude.com)",
+      "WebFetch(domain:plugins.jetbrains.com)",
+      "Bash(test:*)"
     ]
   }
 }

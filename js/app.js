@@ -35,18 +35,18 @@ class E3DCDashboard {
     }
 
     // Drag & Drop
-    const uploadBox = document.querySelector('.upload-box');
-    if (uploadBox) {
-      uploadBox.addEventListener('dragover', (e) => {
+    const uploadLabel = document.querySelector('.upload-label');
+    if (uploadLabel) {
+      uploadLabel.addEventListener('dragover', (e) => {
         e.preventDefault();
-        uploadBox.classList.add('dragover');
+        uploadLabel.classList.add('dragover');
       });
-      uploadBox.addEventListener('dragleave', () => {
-        uploadBox.classList.remove('dragover');
+      uploadLabel.addEventListener('dragleave', () => {
+        uploadLabel.classList.remove('dragover');
       });
-      uploadBox.addEventListener('drop', (e) => {
+      uploadLabel.addEventListener('drop', (e) => {
         e.preventDefault();
-        uploadBox.classList.remove('dragover');
+        uploadLabel.classList.remove('dragover');
         const file = e.dataTransfer.files[0];
         if (file) this.processFile(file);
       });
@@ -828,6 +828,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Automatisch CSV aus data-Verzeichnis laden
   window.dashboard.autoLoadCSV();
+
+  // Logout-Button Event-Listener
+  const logoutBtn = document.getElementById('logout-btn');
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', handleLogout);
+  }
 });
 
 // Auto-Load Funktion zur Klasse hinzufügen
@@ -847,3 +853,30 @@ E3DCDashboard.prototype.autoLoadCSV = async function() {
     console.log('Auto-Load fehlgeschlagen (normal wenn lokal ohne Server):', err.message);
   }
 };
+
+// Logout-Funktion
+async function handleLogout() {
+  if (!confirm('Möchten Sie sich wirklich abmelden?')) {
+    return;
+  }
+
+  try {
+    const response = await fetch('/api/logout', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+
+    if (response.ok) {
+      // Erfolgreich ausgeloggt - zur Login-Seite weiterleiten
+      window.location.href = '/login';
+    } else {
+      console.error('Logout fehlgeschlagen');
+      alert('Fehler beim Abmelden. Bitte versuchen Sie es erneut.');
+    }
+  } catch (err) {
+    console.error('Logout-Fehler:', err);
+    alert('Verbindungsfehler beim Abmelden.');
+  }
+}

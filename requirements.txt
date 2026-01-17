@@ -1,1 +1,9 @@
+# HTTP-Requests für E3DC API
 requests>=2.28.0
+
+# Flask Webserver
+flask>=3.0.0
+werkzeug>=3.0.0
+
+# Kryptographie für Credential-Verschlüsselung
+cryptography>=42.0.0

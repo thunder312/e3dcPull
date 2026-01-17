@@ -238,14 +238,31 @@ class E3DCFetcher:
             return False
 
 
-def main():
-    """Hauptfunktion"""
+def main(credentials=None):
+    """
+    Hauptfunktion
+
+    Args:
+        credentials: Optional dict mit {username, password, dashboard_url}
+                    Falls None, wird versucht aus config.json zu laden (Legacy)
+    """
     config = load_config()
+
+    # Credentials bestimmen
+    if credentials is None:
+        # Legacy: Aus config.json laden (falls vorhanden)
+        if "e3dc" in config and "username" in config["e3dc"]:
+            print("Warnung: Credentials aus config.json geladen. Bitte Webserver verwenden!")
+            credentials = config["e3dc"]
+        else:
+            print("Fehler: Keine Credentials bereitgestellt!")
+            print("Bitte starten Sie den Webserver mit: python web_server.py")
+            sys.exit(1)
 
     # E3DC Fetcher initialisieren
     fetcher = E3DCFetcher(
-        username=config["e3dc"]["username"],
-        password=config["e3dc"]["password"]
+        username=credentials["username"],
+        password=credentials["password"]
     )
 
     # Login

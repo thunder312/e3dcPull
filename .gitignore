@@ -7,6 +7,11 @@ dist
 
 # E3DC Credentials - NIEMALS commiten!
 config.json
+config.json.bak
+
+# Encrypted credentials
+.credentials.enc
+.credentials.enc.backup
 
 # Downloaded data
 data/
