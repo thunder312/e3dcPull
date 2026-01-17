@@ -319,14 +319,15 @@ class E3DCDashboard {
             ctx.lineTo(x, yAxis.bottom);
             ctx.stroke();
 
-            // Datum-Label
+            // Datum-Label (direkt am oberen Rand der Chart-Area)
             const date = new Date(midnight);
             const label = date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
             ctx.setLineDash([]);
             ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
             ctx.font = 'bold 11px sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillText(label, x, yAxis.top - 8);
+            // Position am oberen Rand der Chart-Area (innerhalb)
+            ctx.fillText(label, x, yAxis.top + 12);
           }
         });
 
@@ -396,7 +397,8 @@ class E3DCDashboard {
           maintainAspectRatio: false,
           layout: {
             padding: {
-              top: 25
+              top: 15,
+              bottom: 10
             }
           },
           interaction: {
@@ -438,9 +440,15 @@ class E3DCDashboard {
           },
           plugins: {
             legend: {
+              position: 'top',
+              align: 'center',
               labels: {
                 color: '#e5e7eb',
-                usePointStyle: true
+                usePointStyle: true,
+                padding: 15,
+                font: {
+                  size: 12
+                }
               }
             },
             tooltip: {
@@ -501,7 +509,8 @@ class E3DCDashboard {
           maintainAspectRatio: false,
           layout: {
             padding: {
-              top: 25
+              top: 15,
+              bottom: 10
             }
           },
           scales: {
