@@ -36,9 +36,10 @@ class E3DCFetcher:
     LOGIN_URL = f"{BASE_URL}/login"
     API_URL = f"{BASE_URL}/api"
 
-    def __init__(self, username: str, password: str):
+    def __init__(self, username: str, password: str, dashboard_url: str = None):
         self.username = username
         self.password = password
+        self.dashboard_url = dashboard_url
         self.session = requests.Session()
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -86,19 +87,19 @@ class E3DCFetcher:
 
     def get_system_id(self) -> str:
         """Extrahiert die System-ID aus der Dashboard-URL"""
-        config = load_config()
-        url = config["e3dc"]["dashboard_url"]
+        if not self.dashboard_url:
+            return ""
         # URL-Format: .../overview/{system_id}/{serial}
-        parts = url.rstrip("/").split("/")
+        parts = self.dashboard_url.rstrip("/").split("/")
         if len(parts) >= 2:
             return parts[-2]  # system_id
         return ""
 
     def get_serial(self) -> str:
         """Extrahiert die Seriennummer aus der Dashboard-URL"""
-        config = load_config()
-        url = config["e3dc"]["dashboard_url"]
-        parts = url.rstrip("/").split("/")
+        if not self.dashboard_url:
+            return ""
+        parts = self.dashboard_url.rstrip("/").split("/")
         if len(parts) >= 1:
             return parts[-1]  # serial
         return ""
@@ -132,19 +133,28 @@ class E3DCFetcher:
     def fetch_history_data(self, start_date: str = None, end_date: str = None,
                           resolution: str = "day") -> dict:
         """
-        Ruft historische Daten ab.
+        Ruft historische Daten ab vom echten E3DC Portal.
 
         Args:
             start_date: Startdatum (YYYY-MM-DD), Standard: vor 30 Tagen
             end_date: Enddatum (YYYY-MM-DD), Standard: heute
-            resolution: "hour", "day", "month", "year"
+            resolution: "hour", "day", "month", "year" (wird aktuell ignoriert)
+
+        Returns:
+            dict: Historische Daten oder dict mit "error" Schlüssel bei Fehler
         """
         if not self.logged_in:
-            print("Nicht eingeloggt!")
-            return {}
+            error_msg = "Nicht eingeloggt! Login muss zuerst durchgeführt werden."
+            print(error_msg)
+            return {"error": error_msg}
 
         system_id = self.get_system_id()
         serial = self.get_serial()
+
+        if not system_id or not serial:
+            error_msg = "System-ID oder Seriennummer konnte nicht aus Dashboard-URL extrahiert werden"
+            print(error_msg)
+            return {"error": error_msg}
 
         # Standard-Zeitraum: letzte 30 Tage
         if not end_date:
@@ -153,26 +163,80 @@ class E3DCFetcher:
             start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
 
         try:
-            response = self.session.get(
-                f"{self.API_URL}/systems/{system_id}/history",
-                params={
-                    "serial": serial,
-                    "start": start_date,
-                    "end": end_date,
-                    "resolution": resolution
-                }
-            )
+            # Datum in Unix-Timestamps (Millisekunden) konvertieren
+            # E3DC API erwartet Zeitstempel in Millisekunden
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+
+            # Start: 00:00:00 des Starttages
+            start_timestamp = int(start_dt.timestamp() * 1000)
+            # End: 23:59:59 des Endtages
+            end_dt = end_dt.replace(hour=23, minute=59, second=59)
+            end_timestamp = int(end_dt.timestamp() * 1000)
+
+            # Echte E3DC API-Endpunkte verwenden
+            # /steps liefert die detaillierten Zeitreihen-Daten
+            api_url = f"{self.BASE_URL}/steps"
+            params = {
+                "calculateDiff": "true",
+                "from": start_timestamp,
+                "to": end_timestamp,
+                "includePowerPurchase": "false",
+                "isRawData": "true"
+            }
+
+            print(f"Rufe Daten ab von: {api_url}")
+            print(f"Zeitraum: {start_date} bis {end_date}")
+            print(f"Timestamps: {start_timestamp} bis {end_timestamp}")
+            print(f"Parameter: {params}")
+
+            response = self.session.get(api_url, params=params)
+
+            print(f"Status Code: {response.status_code}")
 
             if response.status_code == 200:
-                return response.json()
+                data = response.json()
+                print(f"Daten erfolgreich geladen: {len(data) if isinstance(data, list) else type(data).__name__}")
+                return data
+            elif response.status_code == 304:
+                # Not Modified - versuche ohne If-None-Match Header
+                print("Status 304 - versuche erneut ohne Cache-Header")
+                # Session-Header für Cache entfernen
+                if 'If-None-Match' in self.session.headers:
+                    del self.session.headers['If-None-Match']
+                response = self.session.get(api_url, params=params)
+                if response.status_code == 200:
+                    data = response.json()
+                    return data
+                else:
+                    error_msg = "Keine neuen Daten verfügbar (304 Not Modified)"
+                    print(error_msg)
+                    return {"error": error_msg}
+            elif response.status_code == 401:
+                error_msg = "Authentifizierung fehlgeschlagen (401). Session möglicherweise abgelaufen."
+                print(error_msg)
+                return {"error": error_msg}
+            elif response.status_code == 404:
+                error_msg = f"API-Endpoint nicht gefunden (404): {api_url}"
+                print(error_msg)
+                print(f"Response: {response.text[:500]}")
+                return {"error": error_msg}
             else:
+                error_msg = f"HTTP {response.status_code}: {response.text[:200]}"
                 print(f"Fehler beim Abrufen der History: {response.status_code}")
                 print(f"Antwort: {response.text[:500]}")
-                return {}
+                return {"error": error_msg}
 
         except requests.RequestException as e:
-            print(f"Fehler: {e}")
-            return {}
+            error_msg = f"Netzwerkfehler: {str(e)}"
+            print(error_msg)
+            return {"error": error_msg}
+        except Exception as e:
+            error_msg = f"Unerwarteter Fehler: {str(e)}"
+            print(error_msg)
+            import traceback
+            traceback.print_exc()
+            return {"error": error_msg}
 
     def export_to_csv(self, data: dict, output_path: Path) -> bool:
         """Exportiert die Daten als CSV"""

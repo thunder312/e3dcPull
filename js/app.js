@@ -75,6 +75,18 @@ class E3DCDashboard {
     if (zoomResetBtn) {
       zoomResetBtn.addEventListener('click', () => this.resetZoom());
     }
+
+    // Daten laden Button
+    const loadDataBtn = document.getElementById('load-data');
+    if (loadDataBtn) {
+      loadDataBtn.addEventListener('click', () => this.loadDataFromPortal());
+    }
+
+    // CSV speichern Button
+    const saveCsvBtn = document.getElementById('save-csv');
+    if (saveCsvBtn) {
+      saveCsvBtn.addEventListener('click', () => this.saveDataAsCSV());
+    }
   }
 
   resetZoom() {
@@ -860,6 +872,135 @@ E3DCDashboard.prototype.autoLoadCSV = async function() {
     }
   } catch (err) {
     console.log('Auto-Load fehlgeschlagen (normal wenn lokal ohne Server):', err.message);
+  }
+};
+
+// Toast-Benachrichtigungen zur Klasse hinzufügen
+E3DCDashboard.prototype.showToast = function(message, type = 'info') {
+  const statusMessage = document.getElementById('status-message');
+  if (!statusMessage) return;
+
+  // Toast-Typen: success, error, warning, info
+  statusMessage.textContent = message;
+  statusMessage.className = `status-message status-${type}`;
+  statusMessage.classList.remove('hidden');
+
+  // Auto-Hide nach 5 Sekunden (außer bei errors)
+  if (type !== 'error') {
+    setTimeout(() => {
+      statusMessage.classList.add('hidden');
+    }, 5000);
+  } else {
+    // Errors bleiben länger sichtbar
+    setTimeout(() => {
+      statusMessage.classList.add('hidden');
+    }, 8000);
+  }
+};
+
+// Daten vom E3DC-Portal laden
+E3DCDashboard.prototype.loadDataFromPortal = async function() {
+  const dateFrom = document.getElementById('date-from').value;
+  const dateTo = document.getElementById('date-to').value;
+
+  // Validierung
+  if (!dateFrom || !dateTo) {
+    this.showToast('Bitte wählen Sie einen Zeitraum aus (Von und Bis Datum)', 'warning');
+    return;
+  }
+
+  // Datum-Validierung
+  const fromDate = new Date(dateFrom);
+  const toDate = new Date(dateTo);
+
+  if (fromDate > toDate) {
+    this.showToast('Das Von-Datum muss vor dem Bis-Datum liegen', 'error');
+    return;
+  }
+
+  try {
+    this.showToast('Lade Daten vom E3DC-Portal...', 'info');
+
+    const response = await fetch(`/api/data/history?start_date=${dateFrom}&end_date=${dateTo}&resolution=day`);
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        this.showToast('Nicht authentifiziert. Bitte melden Sie sich erneut an.', 'error');
+        setTimeout(() => window.location.href = '/login', 2000);
+        return;
+      }
+
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Server-Fehler: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    // Fehler vom Backend prüfen
+    if (data.error) {
+      this.showToast(`E3DC Portal Fehler: ${data.error}`, 'error');
+      return;
+    }
+
+    if (!data || (Array.isArray(data) && data.length === 0)) {
+      this.showToast('Keine Daten für den ausgewählten Zeitraum gefunden', 'warning');
+      return;
+    }
+
+    // Daten verarbeiten
+    this.parseJSON(JSON.stringify({ data: data }));
+
+    const dataCount = Array.isArray(data) ? data.length : (data.data ? data.data.length : 0);
+    this.showToast(`✓ ${dataCount} Datensätze erfolgreich geladen`, 'success');
+
+  } catch (err) {
+    console.error('Fehler beim Laden der Daten:', err);
+    this.showToast(`Fehler beim Laden: ${err.message}`, 'error');
+  }
+};
+
+// Daten als CSV speichern
+E3DCDashboard.prototype.saveDataAsCSV = function() {
+  if (!this.data || this.data.length === 0) {
+    this.showToast('Keine Daten zum Speichern vorhanden', 'warning');
+    return;
+  }
+
+  try {
+    // CSV-Header
+    let csv = 'Zeitstempel,PV-Leistung (W),Hausverbrauch (W),Netzbezug (W),Netzeinspeisung (W),Batteriestand (%)\n';
+
+    // Daten als CSV-Zeilen
+    this.data.forEach(entry => {
+      const timestamp = entry.timestamp.toLocaleString('de-DE');
+      const pv = entry.pv_power || 0;
+      const consumption = entry.consumption || 0;
+      const gridDraw = entry.grid_draw || 0;
+      const gridFeed = entry.grid_feed || 0;
+      const soc = entry.battery_soc || 0;
+
+      csv += `${timestamp},${pv},${consumption},${gridDraw},${gridFeed},${soc}\n`;
+    });
+
+    // Download triggern
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+
+    const filename = `e3dc_data_${new Date().toISOString().split('T')[0]}.csv`;
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    this.showToast(`✓ CSV-Datei "${filename}" wurde heruntergeladen`, 'success');
+
+  } catch (err) {
+    console.error('Fehler beim Speichern der CSV:', err);
+    this.showToast(`Fehler beim Speichern: ${err.message}`, 'error');
   }
 };
 
