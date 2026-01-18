@@ -113,7 +113,7 @@ class E3DCFetcher:
         Args:
             start_date: Startdatum (YYYY-MM-DD), Standard: vor 7 Tagen
             end_date: Enddatum (YYYY-MM-DD), Standard: heute
-            resolution: "day" für Tagesdaten
+            resolution: "15min", "hour" oder "day" für entsprechende Granularität
 
         Returns:
             dict: Historische Daten oder dict mit "error" Schlüssel bei Fehler
@@ -129,38 +129,56 @@ class E3DCFetcher:
         if not start_date:
             start_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
 
-        print(f"Rufe historische Daten ab: {start_date} bis {end_date}")
+        # Auflösung bestimmen (Zeitspanne in Sekunden und Schrittweite)
+        resolution_config = {
+            "15min": {"timespan": 900, "step": timedelta(minutes=15), "label": "15-Minuten"},
+            "hour": {"timespan": 3600, "step": timedelta(hours=1), "label": "Stunden"},
+            "day": {"timespan": 86400, "step": timedelta(days=1), "label": "Tages"}
+        }
+
+        config = resolution_config.get(resolution, resolution_config["day"])
+        timespan = config["timespan"]
+        step = config["step"]
+
+        print(f"Rufe historische Daten ab: {start_date} bis {end_date} (Auflösung: {config['label']})")
 
         try:
             start_dt = datetime.strptime(start_date, "%Y-%m-%d")
             end_dt = datetime.strptime(end_date, "%Y-%m-%d")
 
+            # Bei Tagesauflösung: Ende ist 00:00 des Folgetages
+            # Bei feinerer Auflösung: Ende ist 23:59 des Enddatums
+            if resolution == "day":
+                end_dt = end_dt + timedelta(days=1) - step
+            else:
+                end_dt = end_dt.replace(hour=23, minute=59, second=59)
+
             all_data = []
             current_dt = start_dt
+            total_intervals = 0
 
-            # Tagesweise Daten abrufen
             while current_dt <= end_dt:
                 try:
                     # get_db_data liefert Daten für einen bestimmten Zeitraum
-                    # Parameter: Jahr, Monat, Tag, Zeitspanne (Sekunden)
-                    day_data = self.e3dc.get_db_data(
+                    interval_data = self.e3dc.get_db_data(
                         startDate=current_dt,
-                        timespan=86400,  # 24 Stunden in Sekunden
+                        timespan=timespan,
                         keepAlive=True
                     )
 
-                    if day_data:
-                        # Daten für diesen Tag formatieren
-                        # Korrekte Feldnamen von pye3dc
-                        grid_in = day_data.get("grid_power_in", 0)
-                        grid_out = day_data.get("grid_power_out", 0)
-                        bat_in = day_data.get("bat_power_in", 0)
-                        bat_out = day_data.get("bat_power_out", 0)
-                        solar = day_data.get("solarProduction", 0)
+                    if interval_data:
+                        # Daten formatieren - korrekte Feldnamen von pye3dc
+                        grid_in = interval_data.get("grid_power_in", 0)
+                        grid_out = interval_data.get("grid_power_out", 0)
+                        bat_in = interval_data.get("bat_power_in", 0)
+                        bat_out = interval_data.get("bat_power_out", 0)
+                        solar = interval_data.get("solarProduction", 0)
 
                         entry = {
-                            "timestamp": current_dt.strftime("%Y-%m-%dT00:00:00"),
+                            "timestamp": current_dt.strftime("%Y-%m-%dT%H:%M:%S"),
                             "date": current_dt.strftime("%Y-%m-%d"),
+                            "time": current_dt.strftime("%H:%M"),
+                            "resolution": resolution,
                             # Frontend-kompatible Felder
                             "pvPower": solar,
                             "pv_power": solar,
@@ -170,33 +188,38 @@ class E3DCFetcher:
                             "grid_power": grid_in - grid_out,
                             "grid_draw": grid_in,  # Netzbezug
                             "grid_feed": grid_out,  # Netzeinspeisung
-                            "consumption": day_data.get("consumption", 0),
-                            "homePower": day_data.get("consumption", 0),
-                            "batterySoc": day_data.get("stateOfCharge", 0),
-                            "battery_soc": day_data.get("stateOfCharge", 0),
+                            "consumption": interval_data.get("consumption", 0),
+                            "homePower": interval_data.get("consumption", 0),
+                            "batterySoc": interval_data.get("stateOfCharge", 0),
+                            "battery_soc": interval_data.get("stateOfCharge", 0),
                             # Zusätzliche Details
                             "gridFeedIn": grid_out,
                             "gridConsumption": grid_in,
                             "batteryChargeEnergy": bat_in,
                             "batteryDischargeEnergy": bat_out,
-                            "autarky": day_data.get("autarky", 0),
-                            "selfConsumption": day_data.get("consumed_production", 0),
+                            "autarky": interval_data.get("autarky", 0),
+                            "selfConsumption": interval_data.get("consumed_production", 0),
                         }
                         all_data.append(entry)
-                        print(f"  {current_dt.strftime('%Y-%m-%d')}: PV={entry['pvPower']:.1f}Wh, "
-                              f"Verbrauch={entry['consumption']:.1f}Wh")
+                        total_intervals += 1
 
-                except Exception as day_error:
-                    print(f"  Warnung: Keine Daten für {current_dt.strftime('%Y-%m-%d')}: {day_error}")
+                        # Bei Tag-Auflösung: Fortschritt anzeigen
+                        if resolution == "day":
+                            print(f"  {current_dt.strftime('%Y-%m-%d')}: PV={entry['pvPower']:.1f}Wh, "
+                                  f"Verbrauch={entry['consumption']:.1f}Wh")
 
-                current_dt += timedelta(days=1)
+                except Exception as interval_error:
+                    print(f"  Warnung: Keine Daten für {current_dt.strftime('%Y-%m-%d %H:%M')}: {interval_error}")
 
-            print(f"Insgesamt {len(all_data)} Tage abgerufen")
+                current_dt += step
+
+            print(f"Insgesamt {total_intervals} {config['label']}-Datensätze abgerufen")
 
             return {
                 "data": all_data,
                 "start_date": start_date,
                 "end_date": end_date,
+                "resolution": resolution,
                 "count": len(all_data)
             }
 

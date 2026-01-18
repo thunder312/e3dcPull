@@ -1,6 +1,6 @@
 # Todo
-* Datenprüfung (könnten Tagesmittelwerte sein...) -> Granularität kleiner als 1 Tag wählen
-  * Portal bietet 15 Minuten, Stunden und Tage
+* <del>Datenprüfung (könnten Tagesmittelwerte sein...) -> Granularität kleiner als 1 Tag wählen
+  * Portal bietet 15 Minuten, Stunden und Tage</del>
 * Abmelden soll auch ein modaler Warn sein
 * Mouseovereffekte von Contaninern entfernen
 * Was genau sind die Werte ganz oben? letzte Werte Durchschnitt?

@@ -9,6 +9,7 @@ class E3DCDashboard {
     this.filteredData = [];
     this.charts = {};
     this.currentPeriod = 'all';
+    this.currentResolution = 'day'; // Aktuelle Auflösung: '15min', 'hour', 'day'
 
     this.colors = {
       pv: '#f59e0b',           // Orange - PV
@@ -86,6 +87,35 @@ class E3DCDashboard {
     const saveCsvBtn = document.getElementById('save-csv');
     if (saveCsvBtn) {
       saveCsvBtn.addEventListener('click', () => this.saveDataAsCSV());
+    }
+
+    // Resolution Radio-Buttons
+    document.querySelectorAll('input[name="resolution"]').forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        this.currentResolution = e.target.value;
+      });
+    });
+  }
+
+  /**
+   * Liest die aktuell ausgewählte Resolution aus den Radio-Buttons
+   */
+  getSelectedResolution() {
+    const selected = document.querySelector('input[name="resolution"]:checked');
+    return selected ? selected.value : 'day';
+  }
+
+  /**
+   * Gibt die Intervall-Stunden für die aktuelle Resolution zurück
+   * Wird für Energieberechnungen verwendet
+   */
+  getIntervalHours(resolution = null) {
+    const res = resolution || this.currentResolution;
+    switch (res) {
+      case '15min': return 0.25;  // 15 Minuten = 0.25 Stunden
+      case 'hour': return 1;      // 1 Stunde
+      case 'day': return 24;      // 1 Tag = 24 Stunden
+      default: return 0.25;       // Fallback auf 15 Minuten
     }
   }
 
@@ -695,8 +725,10 @@ class E3DCDashboard {
   updateBalanceChart() {
     if (!this.charts.balance || !this.filteredData.length) return;
 
-    // Energie berechnen: Leistung (W) * Zeit (15min = 0.25h) = Wh -> /1000 = kWh
-    const intervalHours = 0.25; // 15-Minuten-Intervalle
+    // Energie berechnen basierend auf der aktuellen Resolution
+    // Bei 'day' sind die Werte bereits in Wh (Tagesenergie), ansonsten Leistung * Zeit
+    const intervalHours = this.getIntervalHours();
+    const isEnergyData = this.currentResolution === 'day';
 
     let totalPV = 0;
     let totalConsumption = 0;
@@ -704,10 +736,19 @@ class E3DCDashboard {
     let totalGridDraw = 0;
 
     this.filteredData.forEach(d => {
-      totalPV += (d.pv_power || 0) * intervalHours;
-      totalConsumption += (d.consumption || 0) * intervalHours;
-      totalGridFeed += (d.grid_feed || 0) * intervalHours;
-      totalGridDraw += (d.grid_draw || 0) * intervalHours;
+      if (isEnergyData) {
+        // Tagesdaten: Werte sind bereits in Wh
+        totalPV += (d.pv_power || 0);
+        totalConsumption += (d.consumption || 0);
+        totalGridFeed += (d.grid_feed || 0);
+        totalGridDraw += (d.grid_draw || 0);
+      } else {
+        // 15min/Stunden-Daten: Leistung (W) * Zeit (h) = Wh
+        totalPV += (d.pv_power || 0) * intervalHours;
+        totalConsumption += (d.consumption || 0) * intervalHours;
+        totalGridFeed += (d.grid_feed || 0) * intervalHours;
+        totalGridDraw += (d.grid_draw || 0) * intervalHours;
+      }
     });
 
     // Wh zu kWh
@@ -723,7 +764,9 @@ class E3DCDashboard {
   updateStats() {
     if (!this.filteredData.length) return;
 
-    const intervalHours = 0.25;
+    // Energie berechnen basierend auf der aktuellen Resolution
+    const intervalHours = this.getIntervalHours();
+    const isEnergyData = this.currentResolution === 'day';
 
     let totalPV = 0;
     let totalConsumption = 0;
@@ -731,10 +774,19 @@ class E3DCDashboard {
     let totalGridDraw = 0;
 
     this.filteredData.forEach(d => {
-      totalPV += (d.pv_power || 0) * intervalHours;
-      totalConsumption += (d.consumption || 0) * intervalHours;
-      totalGridFeed += (d.grid_feed || 0) * intervalHours;
-      totalGridDraw += (d.grid_draw || 0) * intervalHours;
+      if (isEnergyData) {
+        // Tagesdaten: Werte sind bereits in Wh
+        totalPV += (d.pv_power || 0);
+        totalConsumption += (d.consumption || 0);
+        totalGridFeed += (d.grid_feed || 0);
+        totalGridDraw += (d.grid_draw || 0);
+      } else {
+        // 15min/Stunden-Daten: Leistung (W) * Zeit (h) = Wh
+        totalPV += (d.pv_power || 0) * intervalHours;
+        totalConsumption += (d.consumption || 0) * intervalHours;
+        totalGridFeed += (d.grid_feed || 0) * intervalHours;
+        totalGridDraw += (d.grid_draw || 0) * intervalHours;
+      }
     });
 
     // Wh zu kWh
@@ -881,7 +933,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Auto-Load Funktion zur Klasse hinzufügen
 E3DCDashboard.prototype.autoLoadCSV = async function() {
-  // Automatisch die letzten 7 Tage vom E3DC laden
+  // Automatisch die letzten 7 Tage vom E3DC laden (mit Tages-Auflösung)
   try {
     const endDate = new Date();
     const startDate = new Date();
@@ -889,6 +941,7 @@ E3DCDashboard.prototype.autoLoadCSV = async function() {
 
     const startStr = startDate.toISOString().split('T')[0];
     const endStr = endDate.toISOString().split('T')[0];
+    const resolution = 'day'; // Standard-Auflösung beim Auto-Load
 
     // Datumsfelder im UI setzen
     const dateFromInput = document.getElementById('date-from');
@@ -896,7 +949,14 @@ E3DCDashboard.prototype.autoLoadCSV = async function() {
     if (dateFromInput) dateFromInput.value = startStr;
     if (dateToInput) dateToInput.value = endStr;
 
-    const response = await fetch(`/api/data/history?start_date=${startStr}&end_date=${endStr}&resolution=day`);
+    // Resolution-Radio-Button auf 'day' setzen
+    const dayRadio = document.querySelector('input[name="resolution"][value="day"]');
+    if (dayRadio) dayRadio.checked = true;
+
+    // Resolution für Berechnungen speichern
+    this.currentResolution = resolution;
+
+    const response = await fetch(`/api/data/history?start_date=${startStr}&end_date=${endStr}&resolution=${resolution}`);
 
     if (response.ok) {
       const data = await response.json();
@@ -938,6 +998,7 @@ E3DCDashboard.prototype.showToast = function(message, type = 'info') {
 E3DCDashboard.prototype.loadDataFromPortal = async function() {
   const dateFrom = document.getElementById('date-from').value;
   const dateTo = document.getElementById('date-to').value;
+  const resolution = this.getSelectedResolution();
 
   // Validierung
   if (!dateFrom || !dateTo) {
@@ -954,10 +1015,22 @@ E3DCDashboard.prototype.loadDataFromPortal = async function() {
     return;
   }
 
-  try {
-    this.showToast('Lade Daten vom E3DC-Portal...', 'info');
+  // Warnung bei großen Zeiträumen mit feiner Auflösung
+  const daysDiff = Math.ceil((toDate - fromDate) / (1000 * 60 * 60 * 24));
+  if (resolution === '15min' && daysDiff > 7) {
+    this.showToast(`Lade ${daysDiff} Tage mit 15-Min-Auflösung. Das kann dauern...`, 'info');
+  } else if (resolution === 'hour' && daysDiff > 30) {
+    this.showToast(`Lade ${daysDiff} Tage mit Stunden-Auflösung. Das kann dauern...`, 'info');
+  }
 
-    const response = await fetch(`/api/data/history?start_date=${dateFrom}&end_date=${dateTo}&resolution=day`);
+  try {
+    const resolutionLabels = { '15min': '15-Minuten', 'hour': 'Stunden', 'day': 'Tages' };
+    this.showToast(`Lade ${resolutionLabels[resolution]}-Daten vom E3DC...`, 'info');
+
+    // Resolution speichern für Berechnungen
+    this.currentResolution = resolution;
+
+    const response = await fetch(`/api/data/history?start_date=${dateFrom}&end_date=${dateTo}&resolution=${resolution}`);
 
     if (!response.ok) {
       if (response.status === 401) {
@@ -988,7 +1061,7 @@ E3DCDashboard.prototype.loadDataFromPortal = async function() {
     this.parseJSON(JSON.stringify({ data: dataArray }));
 
     const dataCount = Array.isArray(dataArray) ? dataArray.length : 0;
-    this.showToast(`✓ ${dataCount} Datensätze erfolgreich geladen`, 'success');
+    this.showToast(`✓ ${dataCount} ${resolutionLabels[resolution]}-Datensätze geladen`, 'success');
 
   } catch (err) {
     console.error('Fehler beim Laden der Daten:', err);

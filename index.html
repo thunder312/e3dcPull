@@ -125,6 +125,23 @@
               <input type="date" id="date-to" />
             </div>
           </div>
+          <div class="resolution-selector">
+            <span class="resolution-label">Auflösung:</span>
+            <div class="resolution-options">
+              <label class="resolution-option">
+                <input type="radio" name="resolution" value="15min" />
+                <span>15 Min</span>
+              </label>
+              <label class="resolution-option">
+                <input type="radio" name="resolution" value="hour" />
+                <span>Stunde</span>
+              </label>
+              <label class="resolution-option">
+                <input type="radio" name="resolution" value="day" checked />
+                <span>Tag</span>
+              </label>
+            </div>
+          </div>
           <div class="date-actions">
             <button id="load-data" class="btn btn-primary">
               <svg viewBox="0 0 24 24" fill="currentColor">
