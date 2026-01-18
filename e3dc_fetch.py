@@ -153,11 +153,20 @@ class E3DCFetcher:
             else:
                 end_dt = end_dt.replace(hour=23, minute=59, second=59)
 
+            # Aktuelle Zeit für Zukunfts-Check bei feiner Auflösung
+            now = datetime.now()
+
             all_data = []
             current_dt = start_dt
             total_intervals = 0
+            skipped_future = 0
 
             while current_dt <= end_dt:
+                # Bei Stunden/15-Min-Auflösung: Keine Abfragen in der Zukunft
+                if resolution != "day" and current_dt > now:
+                    skipped_future += 1
+                    current_dt += step
+                    continue
                 try:
                     # get_db_data liefert Daten für einen bestimmten Zeitraum
                     interval_data = self.e3dc.get_db_data(
@@ -213,14 +222,19 @@ class E3DCFetcher:
 
                 current_dt += step
 
-            print(f"Insgesamt {total_intervals} {config['label']}-Datensätze abgerufen")
+            if skipped_future > 0:
+                print(f"Insgesamt {total_intervals} {config['label']}-Datensätze abgerufen "
+                      f"({skipped_future} Zukunfts-Intervalle übersprungen)")
+            else:
+                print(f"Insgesamt {total_intervals} {config['label']}-Datensätze abgerufen")
 
             return {
                 "data": all_data,
                 "start_date": start_date,
                 "end_date": end_date,
                 "resolution": resolution,
-                "count": len(all_data)
+                "count": len(all_data),
+                "skipped_future": skipped_future
             }
 
         except Exception as e:

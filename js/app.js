@@ -95,6 +95,50 @@ class E3DCDashboard {
         this.currentResolution = e.target.value;
       });
     });
+
+    // Modal schließen Button
+    const modalCloseBtn = document.getElementById('modal-close');
+    if (modalCloseBtn) {
+      modalCloseBtn.addEventListener('click', () => this.hideModal());
+    }
+
+    // Modal per Klick auf Overlay schließen
+    const modalOverlay = document.getElementById('warn-modal');
+    if (modalOverlay) {
+      modalOverlay.addEventListener('click', (e) => {
+        if (e.target === modalOverlay) {
+          this.hideModal();
+        }
+      });
+    }
+
+    // Modal per Escape-Taste schließen
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        this.hideModal();
+      }
+    });
+  }
+
+  /**
+   * Zeigt ein Warn-Modal an
+   */
+  showModal(title, message) {
+    const modal = document.getElementById('warn-modal');
+    const titleEl = document.getElementById('modal-title');
+    const messageEl = document.getElementById('modal-message');
+
+    if (titleEl) titleEl.textContent = title;
+    if (messageEl) messageEl.textContent = message;
+    if (modal) modal.classList.remove('hidden');
+  }
+
+  /**
+   * Versteckt das Modal
+   */
+  hideModal() {
+    const modal = document.getElementById('warn-modal');
+    if (modal) modal.classList.add('hidden');
   }
 
   /**
@@ -764,6 +808,18 @@ class E3DCDashboard {
   updateStats() {
     if (!this.filteredData.length) return;
 
+    // Zeitraum berechnen und anzeigen
+    const firstDate = this.filteredData[0].timestamp;
+    const lastDate = this.filteredData[this.filteredData.length - 1].timestamp;
+    const formatDate = (d) => {
+      const date = d instanceof Date ? d : new Date(d);
+      return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    };
+    const periodText = firstDate && lastDate
+      ? `${formatDate(firstDate)} – ${formatDate(lastDate)} (${this.filteredData.length} Datenpunkte)`
+      : '--';
+    this.setStatValue('stats-period', periodText);
+
     // Energie berechnen basierend auf der aktuellen Resolution
     const intervalHours = this.getIntervalHours();
     const isEnergyData = this.currentResolution === 'day';
@@ -827,6 +883,23 @@ class E3DCDashboard {
   }
 
   updateLiveValues(data) {
+    // Zeitstempel formatieren und anzeigen
+    if (data.timestamp) {
+      const ts = data.timestamp instanceof Date ? data.timestamp : new Date(data.timestamp);
+      if (!isNaN(ts.getTime())) {
+        const formattedDate = ts.toLocaleDateString('de-DE', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric'
+        });
+        const formattedTime = ts.toLocaleTimeString('de-DE', {
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        this.setStatValue('live-timestamp', `${formattedDate}, ${formattedTime}`);
+      }
+    }
+
     this.setStatValue('live-pv', this.formatPower(data.pv_power || 0));
     this.setStatValue('live-soc', (data.battery_soc || 0).toFixed(0) + ' %');
 
@@ -956,17 +1029,30 @@ E3DCDashboard.prototype.autoLoadCSV = async function() {
     // Resolution für Berechnungen speichern
     this.currentResolution = resolution;
 
+    // Loading-Toast anzeigen
+    this.showToast('Lade letzte 8 Tage...', 'loading');
+
     const response = await fetch(`/api/data/history?start_date=${startStr}&end_date=${endStr}&resolution=${resolution}`);
 
     if (response.ok) {
       const data = await response.json();
       if (data && !data.error && data.data && data.data.length > 0) {
         this.parseJSON(JSON.stringify(data));
-        this.showToast(`${data.data.length} Tage automatisch geladen`, 'success');
+        this.showToast(`✓ ${data.data.length} Tage automatisch geladen`, 'success');
+      } else {
+        // Kein Toast wenn keine Daten - ist beim ersten Start normal
+        const statusMessage = document.getElementById('status-message');
+        if (statusMessage) statusMessage.classList.add('hidden');
       }
+    } else {
+      // Toast ausblenden bei Fehler (nicht eingeloggt etc.)
+      const statusMessage = document.getElementById('status-message');
+      if (statusMessage) statusMessage.classList.add('hidden');
     }
   } catch (err) {
-    // Kein Fehler anzeigen - beim Start ist es normal wenn keine Daten vorhanden sind
+    // Toast ausblenden bei Fehler
+    const statusMessage = document.getElementById('status-message');
+    if (statusMessage) statusMessage.classList.add('hidden');
     console.log('Auto-Load: Keine Daten geladen', err.message);
   }
 };
@@ -976,19 +1062,30 @@ E3DCDashboard.prototype.showToast = function(message, type = 'info') {
   const statusMessage = document.getElementById('status-message');
   if (!statusMessage) return;
 
-  // Toast-Typen: success, error, warning, info
+  // Vorherigen Timer löschen falls vorhanden
+  if (this._toastTimer) {
+    clearTimeout(this._toastTimer);
+    this._toastTimer = null;
+  }
+
+  // Toast-Typen: success, error, warning, info, loading
   statusMessage.textContent = message;
   statusMessage.className = `status-message status-${type}`;
   statusMessage.classList.remove('hidden');
 
+  // Loading-Toast bleibt bestehen bis er manuell ersetzt wird
+  if (type === 'loading') {
+    return; // Kein Auto-Hide
+  }
+
   // Auto-Hide nach 5 Sekunden (außer bei errors)
   if (type !== 'error') {
-    setTimeout(() => {
+    this._toastTimer = setTimeout(() => {
       statusMessage.classList.add('hidden');
     }, 5000);
   } else {
     // Errors bleiben länger sichtbar
-    setTimeout(() => {
+    this._toastTimer = setTimeout(() => {
       statusMessage.classList.add('hidden');
     }, 8000);
   }
@@ -1008,29 +1105,48 @@ E3DCDashboard.prototype.loadDataFromPortal = async function() {
 
   // Datum-Validierung
   const fromDate = new Date(dateFrom);
-  const toDate = new Date(dateTo);
+  let toDate = new Date(dateTo);
+  const today = new Date();
+  today.setHours(23, 59, 59, 999); // Ende des heutigen Tages
 
   if (fromDate > toDate) {
     this.showToast('Das Von-Datum muss vor dem Bis-Datum liegen', 'error');
     return;
   }
 
-  // Warnung bei großen Zeiträumen mit feiner Auflösung
-  const daysDiff = Math.ceil((toDate - fromDate) / (1000 * 60 * 60 * 24));
-  if (resolution === '15min' && daysDiff > 7) {
-    this.showToast(`Lade ${daysDiff} Tage mit 15-Min-Auflösung. Das kann dauern...`, 'info');
-  } else if (resolution === 'hour' && daysDiff > 30) {
-    this.showToast(`Lade ${daysDiff} Tage mit Stunden-Auflösung. Das kann dauern...`, 'info');
+  // Prüfen ob Bis-Datum in der Zukunft liegt
+  if (toDate > today) {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const dateToInput = document.getElementById('date-to');
+
+    // Modal anzeigen
+    this.showModal(
+      'Datum korrigiert',
+      `Das Bis-Datum lag in der Zukunft. Für zukünftige Zeitpunkte gibt es keine Daten. Das Datum wurde automatisch auf heute (${new Date().toLocaleDateString('de-DE')}) korrigiert.`
+    );
+
+    // Datum auf heute setzen
+    if (dateToInput) {
+      dateToInput.value = todayStr;
+    }
+    toDate = new Date(todayStr);
   }
 
+  // Aktualisierte Datumswerte für die Abfrage
+  const dateToAdjusted = toDate.toISOString().split('T')[0];
+
+  // Lade-Info mit Zeitraum anzeigen
+  const daysDiff = Math.ceil((toDate - fromDate) / (1000 * 60 * 60 * 24)) + 1;
+  const resolutionLabels = { '15min': '15-Minuten', 'hour': 'Stunden', 'day': 'Tages' };
+
   try {
-    const resolutionLabels = { '15min': '15-Minuten', 'hour': 'Stunden', 'day': 'Tages' };
-    this.showToast(`Lade ${resolutionLabels[resolution]}-Daten vom E3DC...`, 'info');
+    // Loading-Toast bleibt bis zum Ende bestehen
+    this.showToast(`Lade ${resolutionLabels[resolution]}-Daten (${daysDiff} Tage)...`, 'loading');
 
     // Resolution speichern für Berechnungen
     this.currentResolution = resolution;
 
-    const response = await fetch(`/api/data/history?start_date=${dateFrom}&end_date=${dateTo}&resolution=${resolution}`);
+    const response = await fetch(`/api/data/history?start_date=${dateFrom}&end_date=${dateToAdjusted}&resolution=${resolution}`);
 
     if (!response.ok) {
       if (response.status === 401) {
