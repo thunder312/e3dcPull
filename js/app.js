@@ -99,37 +99,87 @@ class E3DCDashboard {
     // Modal schließen Button
     const modalCloseBtn = document.getElementById('modal-close');
     if (modalCloseBtn) {
-      modalCloseBtn.addEventListener('click', () => this.hideModal());
+      modalCloseBtn.addEventListener('click', () => {
+        if (this._modalConfirmCallback) {
+          this._modalConfirmCallback();
+          this._modalConfirmCallback = null;
+        }
+        this.hideModal();
+      });
     }
 
-    // Modal per Klick auf Overlay schließen
+    // Modal Abbrechen Button
+    const modalCancelBtn = document.getElementById('modal-cancel');
+    if (modalCancelBtn) {
+      modalCancelBtn.addEventListener('click', () => {
+        this._modalConfirmCallback = null;
+        this.hideModal();
+      });
+    }
+
+    // Modal per Klick auf Overlay schließen (nur bei Info-Modals, nicht bei Bestätigungen)
     const modalOverlay = document.getElementById('warn-modal');
     if (modalOverlay) {
       modalOverlay.addEventListener('click', (e) => {
-        if (e.target === modalOverlay) {
+        if (e.target === modalOverlay && !this._modalConfirmCallback) {
           this.hideModal();
         }
       });
     }
 
-    // Modal per Escape-Taste schließen
+    // Modal per Escape-Taste schließen (nur bei Info-Modals)
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !this._modalConfirmCallback) {
         this.hideModal();
       }
     });
   }
 
   /**
-   * Zeigt ein Warn-Modal an
+   * Zeigt ein Info-Modal an (nur OK-Button)
    */
   showModal(title, message) {
     const modal = document.getElementById('warn-modal');
     const titleEl = document.getElementById('modal-title');
     const messageEl = document.getElementById('modal-message');
+    const cancelBtn = document.getElementById('modal-cancel');
+    const confirmBtn = document.getElementById('modal-close');
+    const iconEl = document.getElementById('modal-icon');
 
     if (titleEl) titleEl.textContent = title;
     if (messageEl) messageEl.textContent = message;
+    if (cancelBtn) cancelBtn.classList.add('hidden');
+    if (confirmBtn) confirmBtn.textContent = 'OK';
+    if (iconEl) iconEl.classList.remove('modal-icon-danger');
+
+    this._modalConfirmCallback = null;
+    if (modal) modal.classList.remove('hidden');
+  }
+
+  /**
+   * Zeigt ein Bestätigungs-Modal an (Bestätigen/Abbrechen)
+   */
+  showConfirmModal(title, message, confirmText, onConfirm, isDanger = false) {
+    const modal = document.getElementById('warn-modal');
+    const titleEl = document.getElementById('modal-title');
+    const messageEl = document.getElementById('modal-message');
+    const cancelBtn = document.getElementById('modal-cancel');
+    const confirmBtn = document.getElementById('modal-close');
+    const iconEl = document.getElementById('modal-icon');
+
+    if (titleEl) titleEl.textContent = title;
+    if (messageEl) messageEl.textContent = message;
+    if (cancelBtn) cancelBtn.classList.remove('hidden');
+    if (confirmBtn) confirmBtn.textContent = confirmText || 'Bestätigen';
+    if (iconEl) {
+      if (isDanger) {
+        iconEl.classList.add('modal-icon-danger');
+      } else {
+        iconEl.classList.remove('modal-icon-danger');
+      }
+    }
+
+    this._modalConfirmCallback = onConfirm;
     if (modal) modal.classList.remove('hidden');
   }
 
@@ -139,6 +189,7 @@ class E3DCDashboard {
   hideModal() {
     const modal = document.getElementById('warn-modal');
     if (modal) modal.classList.add('hidden');
+    this._modalConfirmCallback = null;
   }
 
   /**
@@ -1233,28 +1284,33 @@ E3DCDashboard.prototype.saveDataAsCSV = function() {
 };
 
 // Logout-Funktion
-async function handleLogout() {
-  if (!confirm('Möchten Sie sich wirklich abmelden?')) {
-    return;
-  }
+function handleLogout() {
+  // Bestätigungs-Modal anzeigen
+  window.dashboard.showConfirmModal(
+    'Abmelden',
+    'Möchten Sie sich wirklich abmelden?',
+    'Abmelden',
+    async () => {
+      try {
+        const response = await fetch('/api/logout', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        });
 
-  try {
-    const response = await fetch('/api/logout', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
+        if (response.ok) {
+          // Erfolgreich ausgeloggt - zur Login-Seite weiterleiten
+          window.location.href = '/login';
+        } else {
+          console.error('Logout fehlgeschlagen');
+          window.dashboard.showModal('Fehler', 'Fehler beim Abmelden. Bitte versuchen Sie es erneut.');
+        }
+      } catch (err) {
+        console.error('Logout-Fehler:', err);
+        window.dashboard.showModal('Verbindungsfehler', 'Verbindungsfehler beim Abmelden.');
       }
-    });
-
-    if (response.ok) {
-      // Erfolgreich ausgeloggt - zur Login-Seite weiterleiten
-      window.location.href = '/login';
-    } else {
-      console.error('Logout fehlgeschlagen');
-      alert('Fehler beim Abmelden. Bitte versuchen Sie es erneut.');
-    }
-  } catch (err) {
-    console.error('Logout-Fehler:', err);
-    alert('Verbindungsfehler beim Abmelden.');
-  }
+    },
+    true // isDanger = true für rotes Icon
+  );
 }

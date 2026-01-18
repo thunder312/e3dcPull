@@ -270,14 +270,17 @@
   <!-- Warn-Modal -->
   <div id="warn-modal" class="modal-overlay hidden">
     <div class="modal-content">
-      <div class="modal-icon">
+      <div class="modal-icon" id="modal-icon">
         <svg viewBox="0 0 24 24" fill="currentColor">
           <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
         </svg>
       </div>
       <h3 id="modal-title">Hinweis</h3>
       <p id="modal-message">--</p>
-      <button id="modal-close" class="btn btn-primary">OK</button>
+      <div class="modal-buttons">
+        <button id="modal-cancel" class="btn btn-secondary hidden">Abbrechen</button>
+        <button id="modal-close" class="btn btn-primary">OK</button>
+      </div>
     </div>
   </div>
 
