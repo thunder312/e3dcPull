@@ -6,11 +6,13 @@ Verwendet pye3dc für lokale RSCP-Verbindung zum E3DC-System.
 
 import json
 import sys
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
 try:
     from e3dc import E3DC
+    from e3dc._rscpTags import RscpTag, RscpType
 except ImportError:
     print("Fehler: 'pye3dc' Bibliothek nicht gefunden.")
     print("Bitte installieren mit: pip install pye3dc")
@@ -105,6 +107,221 @@ class E3DCFetcher:
             print(error_msg)
             return {"error": error_msg}
 
+    def _fetch_day_intervals(self, day_start: datetime, interval_seconds: int = 900, debug: bool = True) -> list:
+        """
+        Ruft alle Intervalle für einen Tag ab mit korrekten RSCP-Parametern.
+
+        Die pye3dc-Bibliothek hat einen Bug: Sie setzt TIME_INTERVAL = TIME_SPAN,
+        was nur einen aggregierten Wert zurückgibt. Diese Methode verwendet
+        sendRequest() direkt mit korrekten Parametern.
+
+        WICHTIG: Die Response für einen ganzen Tag (96 Intervalle) ist zu groß
+        für den pye3dc-Buffer. Daher wird der Tag in 4x 6-Stunden-Blöcke aufgeteilt.
+
+        Args:
+            day_start: Beginn des Tages (00:00:00)
+            interval_seconds: Intervall in Sekunden (Standard: 900 = 15 Min)
+            debug: Debug-Ausgaben aktivieren
+
+        Returns:
+            list: Liste von Intervall-Daten für den Tag
+        """
+        all_intervals = []
+
+        # Tag in 1-Stunden-Blöcke aufteilen (24 Anfragen pro Tag)
+        # pye3dc hat einen Bug: socket.recv() wird nur einmal aufgerufen,
+        # aber große Responses kommen in mehreren TCP-Paketen.
+        # Mit 1h-Chunks (4 Intervalle à ~160 Bytes) bleibt es unter der MTU.
+        chunk_hours = 1
+        chunk_seconds = chunk_hours * 3600  # 3600 Sekunden = 1 Stunde
+        chunks_per_day = 24 // chunk_hours  # 24 Chunks
+
+        seen_timestamps = set()  # Duplikate vermeiden
+
+        for chunk_idx in range(chunks_per_day):
+            chunk_start = day_start + timedelta(hours=chunk_idx * chunk_hours)
+            start_timestamp = int(time.mktime(chunk_start.timetuple()))
+
+            if debug and chunk_idx == 0:
+                print(f"\n  [DEBUG] RSCP-Anfrage (Tag aufgeteilt in {chunks_per_day}x {chunk_hours}h Blöcke):")
+                print(f"    TIME_START: {start_timestamp} ({chunk_start})")
+                print(f"    TIME_INTERVAL: {interval_seconds}s ({interval_seconds/60:.0f} Min)")
+                print(f"    TIME_SPAN: {chunk_seconds}s ({chunk_hours}h)")
+
+            intervals = self._fetch_chunk(start_timestamp, interval_seconds, chunk_seconds, debug and chunk_idx == 0)
+
+            # Nur neue Intervalle hinzufügen (Duplikate filtern)
+            new_count = 0
+            for interval in intervals:
+                ts = interval.get("timestamp", 0)
+                if ts not in seen_timestamps:
+                    seen_timestamps.add(ts)
+                    all_intervals.append(interval)
+                    new_count += 1
+
+            if debug:
+                print(f"    Chunk {chunk_idx + 1}/{chunks_per_day}: {new_count} neue Intervalle (von {len(intervals)})")
+
+        if debug:
+            print(f"\n  [DEBUG] Gesamt: {len(all_intervals)} Intervalle für den Tag")
+            if all_intervals:
+                solar_sum = sum(i.get("solarProduction", 0) for i in all_intervals)
+                cons_sum = sum(i.get("consumption", 0) for i in all_intervals)
+                print(f"    Summe Solar: {solar_sum:.0f} Wh = {solar_sum/1000:.2f} kWh")
+                print(f"    Summe Verbrauch: {cons_sum:.0f} Wh = {cons_sum/1000:.2f} kWh")
+
+        return all_intervals
+
+    def _fetch_chunk(self, start_timestamp: int, interval_seconds: int, span_seconds: int, debug: bool = False) -> list:
+        """
+        Ruft einen Zeitblock ab (intern verwendet von _fetch_day_intervals).
+        """
+
+        try:
+            # Direkte RSCP-Anfrage mit korrekten Parametern
+            response = self.e3dc.sendRequest(
+                (
+                    RscpTag.DB_REQ_HISTORY_DATA_DAY,
+                    RscpType.Container,
+                    [
+                        (RscpTag.DB_REQ_HISTORY_TIME_START, RscpType.Uint64, start_timestamp),
+                        (RscpTag.DB_REQ_HISTORY_TIME_INTERVAL, RscpType.Uint64, interval_seconds),
+                        (RscpTag.DB_REQ_HISTORY_TIME_SPAN, RscpType.Uint64, span_seconds),
+                    ],
+                ),
+                keepAlive=True,
+            )
+
+            if debug:
+                print(f"\n  [DEBUG] Response erhalten:")
+                print(f"    Type: {type(response)}")
+                if response:
+                    print(f"    Länge: {len(response) if hasattr(response, '__len__') else 'N/A'}")
+                    if isinstance(response, tuple) and len(response) >= 1:
+                        print(f"    response[0] (Tag): {response[0]}")
+                    if isinstance(response, tuple) and len(response) >= 2:
+                        print(f"    response[1] (Type): {response[1]}")
+                    if isinstance(response, tuple) and len(response) >= 3:
+                        data = response[2]
+                        print(f"    response[2] Type: {type(data)}")
+                        if isinstance(data, list):
+                            print(f"    response[2] Länge: {len(data)}")
+                            if len(data) > 0:
+                                print(f"    Erstes Element: {type(data[0])}")
+                                # Zeige erste 3 Container
+                                for i, item in enumerate(data[:3]):
+                                    print(f"    Container[{i}]: {item}")
+                                if len(data) > 3:
+                                    print(f"    ... und {len(data) - 3} weitere Container")
+                else:
+                    print("    Response ist None oder leer!")
+
+            # Response parsen - enthält mehrere DB_SUM_CONTAINER
+            intervals = []
+            debug_first_interval = True  # Nur erstes Intervall detailliert loggen
+
+            # Die Response-Struktur ist: (Tag, Type, [Container1, Container2, ...])
+            if response and len(response) >= 3 and isinstance(response[2], list):
+                containers = response[2]
+
+                if debug:
+                    print(f"\n  [DEBUG] Parse {len(containers)} Container...")
+
+                for container in containers:
+                    # Jeder Container ist ein Tuple: (Tag, Type, [Werte])
+                    if not isinstance(container, tuple) or len(container) < 3:
+                        if debug:
+                            print(f"    [DEBUG] Überspringe ungültigen Container: {type(container)}")
+                        continue
+
+                    container_tag = container[0]
+                    # DB_SUM_CONTAINER ist die Summe für den Zeitraum, DB_VALUE_CONTAINER sind Einzelwerte
+                    # Wir wollen nur DB_VALUE_CONTAINER (die 15-Min-Intervalle)
+                    if container_tag == 'DB_SUM_CONTAINER':
+                        continue  # Summe überspringen
+
+                    values = container[2] if isinstance(container[2], list) else []
+
+                    # Werte aus dem Container extrahieren
+                    interval_data = {}
+                    graph_index = 0
+                    unknown_tags = []
+
+                    for item in values:
+                        if not isinstance(item, tuple) or len(item) < 3:
+                            continue
+                        tag, tag_type, value = item
+
+                        # Tags kommen als Strings, nicht als Enums!
+                        tag_name = tag.name if hasattr(tag, 'name') else str(tag)
+
+                        if tag_name == 'DB_GRAPH_INDEX':
+                            graph_index = int(value)  # Float zu Int
+                        elif tag_name == 'DB_DC_POWER':
+                            interval_data["solarProduction"] = value
+                        elif tag_name == 'DB_CONSUMPTION':
+                            interval_data["consumption"] = value
+                        elif tag_name == 'DB_GRID_POWER_IN':
+                            interval_data["grid_power_in"] = value
+                        elif tag_name == 'DB_GRID_POWER_OUT':
+                            interval_data["grid_power_out"] = value
+                        elif tag_name == 'DB_BAT_POWER_IN':
+                            interval_data["bat_power_in"] = value
+                        elif tag_name == 'DB_BAT_POWER_OUT':
+                            interval_data["bat_power_out"] = value
+                        elif tag_name == 'DB_BAT_CHARGE_LEVEL':
+                            interval_data["stateOfCharge"] = value
+                        elif tag_name == 'DB_AUTARKY':
+                            interval_data["autarky"] = value
+                        elif tag_name == 'DB_CONSUMED_PRODUCTION':
+                            interval_data["consumed_production"] = value
+                        else:
+                            unknown_tags.append((tag_name, value))
+
+                    if interval_data:
+                        # Timestamp für dieses Intervall berechnen
+                        # graph_index gibt die Position im Tagesverlauf an
+                        interval_timestamp = start_timestamp + (graph_index * interval_seconds)
+                        interval_data["timestamp"] = interval_timestamp
+                        interval_data["graph_index"] = graph_index
+                        intervals.append(interval_data)
+
+                        # Debug: Erstes Intervall detailliert anzeigen
+                        if debug and debug_first_interval:
+                            ts = datetime.fromtimestamp(interval_timestamp)
+                            print(f"\n  [DEBUG] Erstes geparste Intervall (Index {graph_index}, {ts.strftime('%H:%M')}):")
+                            print(f"    solarProduction: {interval_data.get('solarProduction', 'N/A')} Wh")
+                            print(f"    consumption: {interval_data.get('consumption', 'N/A')} Wh")
+                            print(f"    grid_power_in: {interval_data.get('grid_power_in', 'N/A')} Wh")
+                            print(f"    grid_power_out: {interval_data.get('grid_power_out', 'N/A')} Wh")
+                            print(f"    bat_power_in: {interval_data.get('bat_power_in', 'N/A')} Wh")
+                            print(f"    bat_power_out: {interval_data.get('bat_power_out', 'N/A')} Wh")
+                            print(f"    stateOfCharge: {interval_data.get('stateOfCharge', 'N/A')} %")
+                            if unknown_tags:
+                                print(f"    Unbekannte Tags: {unknown_tags[:5]}")
+                            debug_first_interval = False
+
+                if debug:
+                    print(f"\n  [DEBUG] Erfolgreich {len(intervals)} Intervalle geparst")
+                    if intervals:
+                        # Zeige Zusammenfassung des ersten Tages
+                        solar_sum = sum(i.get("solarProduction", 0) for i in intervals)
+                        cons_sum = sum(i.get("consumption", 0) for i in intervals)
+                        print(f"    Summe Solar: {solar_sum:.0f} Wh = {solar_sum/1000:.2f} kWh")
+                        print(f"    Summe Verbrauch: {cons_sum:.0f} Wh = {cons_sum/1000:.2f} kWh")
+            else:
+                if debug:
+                    print(f"  [DEBUG] Response hat nicht das erwartete Format!")
+                    print(f"    response: {response}")
+
+            return intervals
+
+        except Exception as e:
+            print(f"    Fehler bei _fetch_chunk: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+
     def fetch_history_data(self, start_date: str = None, end_date: str = None,
                            resolution: str = "day") -> dict:
         """
@@ -129,112 +346,152 @@ class E3DCFetcher:
         if not start_date:
             start_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
 
-        # Auflösung bestimmen (Zeitspanne in Sekunden und Schrittweite)
+        # Auflösung bestimmen
         resolution_config = {
-            "15min": {"timespan": 900, "step": timedelta(minutes=15), "label": "15-Minuten"},
-            "hour": {"timespan": 3600, "step": timedelta(hours=1), "label": "Stunden"},
-            "day": {"timespan": 86400, "step": timedelta(days=1), "label": "Tages"}
+            "15min": {"interval": 900, "label": "15-Minuten"},
+            "hour": {"interval": 3600, "label": "Stunden"},
+            "day": {"interval": 86400, "label": "Tages"}
         }
 
         config = resolution_config.get(resolution, resolution_config["day"])
-        timespan = config["timespan"]
-        step = config["step"]
+        interval_seconds = config["interval"]
 
         print(f"Rufe historische Daten ab: {start_date} bis {end_date} (Auflösung: {config['label']})")
 
         try:
             start_dt = datetime.strptime(start_date, "%Y-%m-%d")
             end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-
-            # Bei Tagesauflösung: Ende ist 00:00 des Folgetages
-            # Bei feinerer Auflösung: Ende ist 23:59 des Enddatums
-            if resolution == "day":
-                end_dt = end_dt + timedelta(days=1) - step
-            else:
-                end_dt = end_dt.replace(hour=23, minute=59, second=59)
-
-            # Aktuelle Zeit für Zukunfts-Check bei feiner Auflösung
             now = datetime.now()
 
             all_data = []
-            current_dt = start_dt
-            total_intervals = 0
-            skipped_future = 0
+            current_day = start_dt
+            is_first_day = True  # Debug nur für ersten Tag
 
-            while current_dt <= end_dt:
-                # Bei Stunden/15-Min-Auflösung: Keine Abfragen in der Zukunft
-                if resolution != "day" and current_dt > now:
-                    skipped_future += 1
-                    current_dt += step
-                    continue
-                try:
-                    # get_db_data liefert Daten für einen bestimmten Zeitraum
-                    interval_data = self.e3dc.get_db_data(
-                        startDate=current_dt,
-                        timespan=timespan,
-                        keepAlive=True
-                    )
+            # Tag für Tag abfragen
+            while current_day <= end_dt:
+                day_start = current_day.replace(hour=0, minute=0, second=0, microsecond=0)
 
-                    if interval_data:
-                        # Daten formatieren - korrekte Feldnamen von pye3dc
-                        grid_in = interval_data.get("grid_power_in", 0)
-                        grid_out = interval_data.get("grid_power_out", 0)
-                        bat_in = interval_data.get("bat_power_in", 0)
-                        bat_out = interval_data.get("bat_power_out", 0)
-                        solar = interval_data.get("solarProduction", 0)
+                print(f"  Lade {current_day.strftime('%Y-%m-%d')}...", end="", flush=True)
 
-                        entry = {
-                            "timestamp": current_dt.strftime("%Y-%m-%dT%H:%M:%S"),
-                            "date": current_dt.strftime("%Y-%m-%d"),
-                            "time": current_dt.strftime("%H:%M"),
-                            "resolution": resolution,
-                            # Frontend-kompatible Felder
-                            "pvPower": solar,
-                            "pv_power": solar,
-                            "batteryPower": bat_out - bat_in,  # positiv = entladen
-                            "battery_power": bat_out - bat_in,
-                            "gridPower": grid_in - grid_out,  # positiv = Bezug, negativ = Einspeisung
-                            "grid_power": grid_in - grid_out,
-                            "grid_draw": grid_in,  # Netzbezug
-                            "grid_feed": grid_out,  # Netzeinspeisung
-                            "consumption": interval_data.get("consumption", 0),
-                            "homePower": interval_data.get("consumption", 0),
-                            "batterySoc": interval_data.get("stateOfCharge", 0),
-                            "battery_soc": interval_data.get("stateOfCharge", 0),
-                            # Zusätzliche Details
-                            "gridFeedIn": grid_out,
-                            "gridConsumption": grid_in,
-                            "batteryChargeEnergy": bat_in,
-                            "batteryDischargeEnergy": bat_out,
-                            "autarky": interval_data.get("autarky", 0),
-                            "selfConsumption": interval_data.get("consumed_production", 0),
-                        }
-                        all_data.append(entry)
-                        total_intervals += 1
+                if resolution == "day":
+                    # Bei Tagesauflösung: Alte Methode verwenden (get_db_data)
+                    # Diese gibt korrekt die Tagessumme zurück
+                    try:
+                        day_data = self.e3dc.get_db_data(
+                            startDate=current_day.date(),
+                            timespan="DAY",
+                            keepAlive=True
+                        )
 
-                        # Bei Tag-Auflösung: Fortschritt anzeigen
-                        if resolution == "day":
-                            print(f"  {current_dt.strftime('%Y-%m-%d')}: PV={entry['pvPower']:.1f}Wh, "
-                                  f"Verbrauch={entry['consumption']:.1f}Wh")
+                        if day_data:
+                            grid_in = day_data.get("grid_power_in", 0)
+                            grid_out = day_data.get("grid_power_out", 0)
+                            bat_in = day_data.get("bat_power_in", 0)
+                            bat_out = day_data.get("bat_power_out", 0)
+                            solar = day_data.get("solarProduction", 0)
 
-                except Exception as interval_error:
-                    print(f"  Warnung: Keine Daten für {current_dt.strftime('%Y-%m-%d %H:%M')}: {interval_error}")
+                            entry = {
+                                "timestamp": current_day.strftime("%Y-%m-%dT00:00:00"),
+                                "date": current_day.strftime("%Y-%m-%d"),
+                                "time": "00:00",
+                                "resolution": resolution,
+                                "pvPower": solar,
+                                "pv_power": solar,
+                                "batteryPower": bat_out - bat_in,
+                                "battery_power": bat_out - bat_in,
+                                "gridPower": grid_in - grid_out,
+                                "grid_power": grid_in - grid_out,
+                                "grid_draw": grid_in,
+                                "grid_feed": grid_out,
+                                "consumption": day_data.get("consumption", 0),
+                                "homePower": day_data.get("consumption", 0),
+                                "batterySoc": day_data.get("stateOfCharge", 0),
+                                "battery_soc": day_data.get("stateOfCharge", 0),
+                                "gridFeedIn": grid_out,
+                                "gridConsumption": grid_in,
+                                "batteryChargeEnergy": bat_in,
+                                "batteryDischargeEnergy": bat_out,
+                                "autarky": day_data.get("autarky", 0),
+                                "selfConsumption": day_data.get("consumed_production", 0),
+                            }
+                            all_data.append(entry)
+                            print(f" PV={solar:.0f}Wh, Verbrauch={entry['consumption']:.0f}Wh")
+                        else:
+                            print(" keine Daten")
 
-                current_dt += step
+                    except Exception as e:
+                        print(f" Fehler: {e}")
+                else:
+                    # Bei 15min/hour Auflösung: Neue Methode mit korrekten RSCP-Parametern
+                    # Debug nur für ersten Tag aktivieren
+                    intervals = self._fetch_day_intervals(day_start, interval_seconds, debug=is_first_day)
+                    is_first_day = False
 
-            if skipped_future > 0:
-                print(f"Insgesamt {total_intervals} {config['label']}-Datensätze abgerufen "
-                      f"({skipped_future} Zukunfts-Intervalle übersprungen)")
-            else:
-                print(f"Insgesamt {total_intervals} {config['label']}-Datensätze abgerufen")
+                    if intervals:
+                        count = 0
+                        for interval in intervals:
+                            # Timestamp in datetime umwandeln
+                            ts = datetime.fromtimestamp(interval.get("timestamp", 0))
+
+                            # Nur Daten bis jetzt (keine Zukunft)
+                            if ts > now:
+                                continue
+
+                            grid_in = interval.get("grid_power_in", 0)
+                            grid_out = interval.get("grid_power_out", 0)
+                            bat_in = interval.get("bat_power_in", 0)
+                            bat_out = interval.get("bat_power_out", 0)
+                            solar = interval.get("solarProduction", 0)
+
+                            # Werte sind Energie in Wh für das Intervall
+                            # Für Leistung in W: Wh / (Intervall in Stunden)
+                            interval_hours = interval_seconds / 3600.0
+
+                            entry = {
+                                "timestamp": ts.strftime("%Y-%m-%dT%H:%M:%S"),
+                                "date": ts.strftime("%Y-%m-%d"),
+                                "time": ts.strftime("%H:%M"),
+                                "resolution": resolution,
+                                # Leistung in W (Energie/Zeit)
+                                "pvPower": solar / interval_hours,
+                                "pv_power": solar / interval_hours,
+                                "batteryPower": (bat_out - bat_in) / interval_hours,
+                                "battery_power": (bat_out - bat_in) / interval_hours,
+                                "gridPower": (grid_in - grid_out) / interval_hours,
+                                "grid_power": (grid_in - grid_out) / interval_hours,
+                                "grid_draw": grid_in / interval_hours,
+                                "grid_feed": grid_out / interval_hours,
+                                "consumption": interval.get("consumption", 0) / interval_hours,
+                                "homePower": interval.get("consumption", 0) / interval_hours,
+                                "batterySoc": interval.get("stateOfCharge", 0),
+                                "battery_soc": interval.get("stateOfCharge", 0),
+                                "gridFeedIn": grid_out / interval_hours,
+                                "gridConsumption": grid_in / interval_hours,
+                                "batteryChargeEnergy": bat_in,
+                                "batteryDischargeEnergy": bat_out,
+                                "autarky": interval.get("autarky", 0),
+                                "selfConsumption": interval.get("consumed_production", 0),
+                            }
+                            all_data.append(entry)
+                            count += 1
+
+                        print(f" {count} Intervalle")
+                    else:
+                        print(" keine Daten")
+
+                current_day += timedelta(days=1)
+
+            # Daten nach Timestamp sortieren
+            all_data.sort(key=lambda x: x.get("timestamp", ""))
+
+            print(f"Insgesamt {len(all_data)} {config['label']}-Datensätze abgerufen")
 
             return {
                 "data": all_data,
                 "start_date": start_date,
                 "end_date": end_date,
                 "resolution": resolution,
-                "count": len(all_data),
-                "skipped_future": skipped_future
+                "count": len(all_data)
             }
 
         except Exception as e:

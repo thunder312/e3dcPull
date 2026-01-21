@@ -18,7 +18,11 @@
       "Bash(findstr:*)",
       "WebSearch",
       "Bash(pip show:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(powershell -Command \"Get-ChildItem -Path \\([Environment]::GetFolderPath\\(''UserProfile''\\) + ''\\\\Downloads''\\) -Filter ''*.csv'' | Select-Object -ExpandProperty FullName\")",
+      "WebFetch(domain:python-e3dc.readthedocs.io)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }
