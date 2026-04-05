@@ -279,9 +279,15 @@ class E3DCFetcher:
                             unknown_tags.append((tag_name, value))
 
                     if interval_data:
+                        # graph_index 0 überspringen - E3DC liefert dort immer Null-Werte
+                        # Die echten Daten für die volle Stunde kommen von Index 4 des vorherigen Chunks
+                        rounded_index = int(round(graph_index))
+                        if rounded_index == 0:
+                            continue
+
                         # Timestamp für dieses Intervall berechnen
-                        # graph_index gibt die Position im Tagesverlauf an
-                        interval_timestamp = start_timestamp + (graph_index * interval_seconds)
+                        # graph_index ist relativ zum Chunk-Start (1, 2, 3, 4 für die 4 Intervalle)
+                        interval_timestamp = start_timestamp + (rounded_index * interval_seconds)
                         interval_data["timestamp"] = interval_timestamp
                         interval_data["graph_index"] = graph_index
                         intervals.append(interval_data)
@@ -390,6 +396,7 @@ class E3DCFetcher:
                             bat_out = day_data.get("bat_power_out", 0)
                             solar = day_data.get("solarProduction", 0)
 
+                            # E3DC-Benennung ist aus Netz-Sicht: IN=ins Netz (Einspeisung), OUT=aus Netz (Bezug)
                             entry = {
                                 "timestamp": current_day.strftime("%Y-%m-%dT00:00:00"),
                                 "date": current_day.strftime("%Y-%m-%d"),
@@ -399,16 +406,16 @@ class E3DCFetcher:
                                 "pv_power": solar,
                                 "batteryPower": bat_out - bat_in,
                                 "battery_power": bat_out - bat_in,
-                                "gridPower": grid_in - grid_out,
-                                "grid_power": grid_in - grid_out,
-                                "grid_draw": grid_in,
-                                "grid_feed": grid_out,
+                                "gridPower": grid_out - grid_in,
+                                "grid_power": grid_out - grid_in,
+                                "grid_draw": grid_out,       # OUT = Bezug aus dem Netz
+                                "grid_feed": grid_in,        # IN = Einspeisung ins Netz
                                 "consumption": day_data.get("consumption", 0),
                                 "homePower": day_data.get("consumption", 0),
                                 "batterySoc": day_data.get("stateOfCharge", 0),
                                 "battery_soc": day_data.get("stateOfCharge", 0),
-                                "gridFeedIn": grid_out,
-                                "gridConsumption": grid_in,
+                                "gridFeedIn": grid_in,       # IN = Einspeisung ins Netz
+                                "gridConsumption": grid_out, # OUT = Bezug aus dem Netz
                                 "batteryChargeEnergy": bat_in,
                                 "batteryDischargeEnergy": bat_out,
                                 "autarky": day_data.get("autarky", 0),
@@ -457,16 +464,17 @@ class E3DCFetcher:
                                 "pv_power": solar / interval_hours,
                                 "batteryPower": (bat_out - bat_in) / interval_hours,
                                 "battery_power": (bat_out - bat_in) / interval_hours,
-                                "gridPower": (grid_in - grid_out) / interval_hours,
-                                "grid_power": (grid_in - grid_out) / interval_hours,
-                                "grid_draw": grid_in / interval_hours,
-                                "grid_feed": grid_out / interval_hours,
+                                # E3DC-Benennung ist aus Netz-Sicht: IN=ins Netz (Einspeisung), OUT=aus Netz (Bezug)
+                                "gridPower": (grid_out - grid_in) / interval_hours,
+                                "grid_power": (grid_out - grid_in) / interval_hours,
+                                "grid_draw": grid_out / interval_hours,    # OUT = Bezug aus dem Netz
+                                "grid_feed": grid_in / interval_hours,     # IN = Einspeisung ins Netz
                                 "consumption": interval.get("consumption", 0) / interval_hours,
                                 "homePower": interval.get("consumption", 0) / interval_hours,
                                 "batterySoc": interval.get("stateOfCharge", 0),
                                 "battery_soc": interval.get("stateOfCharge", 0),
-                                "gridFeedIn": grid_out / interval_hours,
-                                "gridConsumption": grid_in / interval_hours,
+                                "gridFeedIn": grid_in / interval_hours,    # IN = Einspeisung ins Netz
+                                "gridConsumption": grid_out / interval_hours,  # OUT = Bezug aus dem Netz
                                 "batteryChargeEnergy": bat_in,
                                 "batteryDischargeEnergy": bat_out,
                                 "autarky": interval.get("autarky", 0),

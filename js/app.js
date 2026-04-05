@@ -9,7 +9,7 @@ class E3DCDashboard {
     this.filteredData = [];
     this.charts = {};
     this.currentPeriod = 'all';
-    this.currentResolution = 'day'; // Aktuelle Auflösung: '15min', 'hour', 'day'
+    this.currentResolution = '15min'; // Aktuelle Auflösung: '15min', 'hour', 'day'
 
     this.colors = {
       pv: '#f59e0b',           // Orange - PV
@@ -307,7 +307,8 @@ class E3DCDashboard {
       batteryDischarge: findColumn('batterie entladen', 'battery_discharge'),
       gridFeed: findColumn('netzeinspeisung', 'grid_feed', 'einspeisung'),
       gridDraw: findColumn('netzbezug', 'grid_draw', 'bezug'),
-      consumption: findColumn('hausverbrauch', 'verbrauch', 'consumption')
+      consumption: findColumn('hausverbrauch', 'verbrauch', 'consumption'),
+      curtailment: findColumn('abregelungsgrenze', 'curtailment')
     };
 
     this.data = [];
@@ -353,6 +354,7 @@ class E3DCDashboard {
         grid_feed: getValue(columnMap.gridFeed),
         grid_draw: getValue(columnMap.gridDraw),
         consumption: getValue(columnMap.consumption),
+        curtailment: getValue(columnMap.curtailment),
         // Kombinierte Werte
         battery_power: getValue(columnMap.batteryCharge) - getValue(columnMap.batteryDischarge),
         grid_power: getValue(columnMap.gridDraw) - getValue(columnMap.gridFeed)
@@ -393,6 +395,8 @@ class E3DCDashboard {
         timestamp: new Date(entry.timestamp),
         pv_power: entry.pv_power || entry.pvPower || 0,
         battery_power: entry.battery_power || entry.batteryPower || 0,
+        battery_charge: entry.battery_charge || entry.batteryChargeEnergy || 0,
+        battery_discharge: entry.battery_discharge || entry.batteryDischargeEnergy || 0,
         grid_power: entry.grid_power || entry.gridPower || 0,
         grid_draw: entry.grid_draw || entry.gridConsumption || 0,
         grid_feed: entry.grid_feed || entry.gridFeedIn || 0,
@@ -783,6 +787,9 @@ class E3DCDashboard {
   updateCharts() {
     if (!this.filteredData.length) return;
 
+    // Zoom zurücksetzen bei neuen Daten
+    this.resetZoom();
+
     // Hauptdiagramm aktualisieren
     if (this.charts.main) {
       this.charts.main.data.datasets[0].data = this.filteredData.map(d => ({
@@ -1061,11 +1068,11 @@ E3DCDashboard.prototype.autoLoadCSV = async function() {
   try {
     const endDate = new Date();
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 7);
+    startDate.setDate(startDate.getDate() - 1);
 
     const startStr = startDate.toISOString().split('T')[0];
     const endStr = endDate.toISOString().split('T')[0];
-    const resolution = 'day'; // Standard-Auflösung beim Auto-Load
+    const resolution = '15min'; // Standard-Auflösung beim Auto-Load
 
     // Datumsfelder im UI setzen
     const dateFromInput = document.getElementById('date-from');
@@ -1073,15 +1080,15 @@ E3DCDashboard.prototype.autoLoadCSV = async function() {
     if (dateFromInput) dateFromInput.value = startStr;
     if (dateToInput) dateToInput.value = endStr;
 
-    // Resolution-Radio-Button auf 'day' setzen
-    const dayRadio = document.querySelector('input[name="resolution"][value="day"]');
-    if (dayRadio) dayRadio.checked = true;
+    // Resolution-Radio-Button auf '15min' setzen
+    const minRadio = document.querySelector('input[name="resolution"][value="15min"]');
+    if (minRadio) minRadio.checked = true;
 
     // Resolution für Berechnungen speichern
     this.currentResolution = resolution;
 
     // Loading-Toast anzeigen
-    this.showToast('Lade letzte 8 Tage...', 'loading');
+    this.showToast('Lade letzten Tag...', 'loading');
 
     const response = await fetch(`/api/data/history?start_date=${startStr}&end_date=${endStr}&resolution=${resolution}`);
 
@@ -1089,7 +1096,7 @@ E3DCDashboard.prototype.autoLoadCSV = async function() {
       const data = await response.json();
       if (data && !data.error && data.data && data.data.length > 0) {
         this.parseJSON(JSON.stringify(data));
-        this.showToast(`✓ ${data.data.length} Tage automatisch geladen`, 'success');
+        this.showToast(`✓ ${data.data.length} Datensätze automatisch geladen`, 'success');
       } else {
         // Kein Toast wenn keine Daten - ist beim ersten Start normal
         const statusMessage = document.getElementById('status-message');
@@ -1244,21 +1251,24 @@ E3DCDashboard.prototype.saveDataAsCSV = function() {
   }
 
   try {
-    // CSV-Header (Semikolon-getrennt für deutsche Excel-Kompatibilität)
-    let csv = 'Zeitstempel;PV-Leistung (W);Hausverbrauch (W);Netzbezug (W);Netzeinspeisung (W);Batteriestand (%)\n';
+    // CSV-Header im E3DC-Portal-Format (Semikolon-getrennt für deutsche Excel-Kompatibilität)
+    let csv = '"Zeitstempel";"Ladezustand [%]";"Solarproduktion [W]";"Batterie Laden [W]";"Batterie Entladen [W]";"Netzeinspeisung [W]";"Netzbezug [W]";"Hausverbrauch [W]";"Abregelungsgrenze [W]"\n';
 
     // Daten als CSV-Zeilen
     this.data.forEach(entry => {
       // Datum formatieren: DD.MM.YYYY HH:MM:SS
       const d = entry.timestamp;
       const timestamp = `${d.getDate().toString().padStart(2,'0')}.${(d.getMonth()+1).toString().padStart(2,'0')}.${d.getFullYear()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}`;
-      const pv = entry.pv_power || 0;
-      const consumption = entry.consumption || 0;
-      const gridDraw = entry.grid_draw || 0;
-      const gridFeed = entry.grid_feed || 0;
       const soc = entry.battery_soc || 0;
+      const pv = entry.pv_power || 0;
+      const batteryCharge = entry.battery_charge || 0;
+      const batteryDischarge = entry.battery_discharge || 0;
+      const gridFeed = entry.grid_feed || 0;
+      const gridDraw = entry.grid_draw || 0;
+      const consumption = entry.consumption || 0;
+      const curtailment = entry.curtailment || ''; // Abregelungsgrenze - meist nicht verfügbar
 
-      csv += `${timestamp};${pv};${consumption};${gridDraw};${gridFeed};${soc}\n`;
+      csv += `${timestamp};${soc};${pv};${batteryCharge};${batteryDischarge};${gridFeed};${gridDraw};${consumption};${curtailment}\n`;
     });
 
     // Download triggern

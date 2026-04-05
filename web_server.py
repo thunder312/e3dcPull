@@ -15,6 +15,7 @@ from werkzeug.exceptions import NotFound
 
 from credential_manager import CredentialManager
 from e3dc_fetch import E3DCFetcher
+from e3dc_cloud_api import E3DCCloudAPI
 
 # App initialisieren
 app = Flask(__name__,
@@ -30,6 +31,9 @@ BASE_PATH = Path(__file__).parent
 
 # Global: E3DC Fetcher Instance (wird nach Login initialisiert)
 _e3dc_fetcher = None
+
+# Cloud API als Standard verwenden (True) oder lokale RSCP-Verbindung (False)
+USE_CLOUD_API = True
 
 
 def load_config():
@@ -135,21 +139,22 @@ def credential_setup():
     try:
         data = request.get_json()
 
-        # Validierung
-        required_fields = ['username', 'password', 'ip_address', 'rscp_key', 'master_password']
-        if not all(field in data for field in required_fields):
+        # Validierung (ip_address und rscp_key sind optional bei Cloud API)
+        required_fields = ['username', 'password', 'master_password']
+        if not all(field in data and data[field] for field in required_fields):
             return jsonify({
                 "success": False,
-                "error": "Fehlende Felder"
+                "error": "Fehlende Felder: Benutzername, Passwort und Master-Passwort sind erforderlich"
             }), 400
 
-        # Credentials speichern
+        # Credentials speichern (ip_address und rscp_key können leer sein bei Cloud API)
         success = CredentialManager.save_credentials(
             username=data['username'],
             password=data['password'],
-            ip_address=data['ip_address'],
-            rscp_key=data['rscp_key'],
-            master_password=data['master_password']
+            ip_address=data.get('ip_address', ''),
+            rscp_key=data.get('rscp_key', ''),
+            master_password=data['master_password'],
+            serial_number=data.get('serial_number', '')
         )
 
         if not success:
@@ -163,18 +168,26 @@ def credential_setup():
         session['credentials'] = {
             "username": data['username'],
             "password": data['password'],
-            "ip_address": data['ip_address'],
-            "rscp_key": data['rscp_key']
+            "ip_address": data.get('ip_address', ''),
+            "rscp_key": data.get('rscp_key', ''),
+            "serial_number": data.get('serial_number', '')
         }
 
         # E3DC Fetcher initialisieren
         global _e3dc_fetcher
-        _e3dc_fetcher = E3DCFetcher(
-            username=data['username'],
-            password=data['password'],
-            ip_address=data['ip_address'],
-            rscp_key=data['rscp_key']
-        )
+        if USE_CLOUD_API:
+            _e3dc_fetcher = E3DCCloudAPI(
+                username=data['username'],
+                password=data['password'],
+                serial_number=data.get('serial_number')
+            )
+        else:
+            _e3dc_fetcher = E3DCFetcher(
+                username=data['username'],
+                password=data['password'],
+                ip_address=data['ip_address'],
+                rscp_key=data['rscp_key']
+            )
 
         return jsonify({
             "success": True,
@@ -230,12 +243,19 @@ def credential_unlock():
 
         # E3DC Fetcher initialisieren
         global _e3dc_fetcher
-        _e3dc_fetcher = E3DCFetcher(
-            username=credentials['username'],
-            password=credentials['password'],
-            ip_address=credentials.get('ip_address', ''),
-            rscp_key=credentials.get('rscp_key', '')
-        )
+        if USE_CLOUD_API:
+            _e3dc_fetcher = E3DCCloudAPI(
+                username=credentials['username'],
+                password=credentials['password'],
+                serial_number=credentials.get('serial_number')
+            )
+        else:
+            _e3dc_fetcher = E3DCFetcher(
+                username=credentials['username'],
+                password=credentials['password'],
+                ip_address=credentials.get('ip_address', ''),
+                rscp_key=credentials.get('rscp_key', '')
+            )
 
         return jsonify({
             "success": True,
@@ -307,12 +327,19 @@ def get_live_data():
             if not credentials:
                 return jsonify({"error": "Keine Credentials in Session"}), 401
 
-            _e3dc_fetcher = E3DCFetcher(
-                username=credentials['username'],
-                password=credentials['password'],
-                ip_address=credentials.get('ip_address', ''),
-                rscp_key=credentials.get('rscp_key', '')
-            )
+            if USE_CLOUD_API:
+                _e3dc_fetcher = E3DCCloudAPI(
+                    username=credentials['username'],
+                    password=credentials['password'],
+                    serial_number=credentials.get('serial_number')
+                )
+            else:
+                _e3dc_fetcher = E3DCFetcher(
+                    username=credentials['username'],
+                    password=credentials['password'],
+                    ip_address=credentials.get('ip_address', ''),
+                    rscp_key=credentials.get('rscp_key', '')
+                )
 
         # Login falls noch nicht eingeloggt
         if not _e3dc_fetcher.logged_in:
@@ -352,12 +379,19 @@ def get_history_data():
             if not credentials:
                 return jsonify({"error": "Keine Credentials in Session"}), 401
 
-            _e3dc_fetcher = E3DCFetcher(
-                username=credentials['username'],
-                password=credentials['password'],
-                ip_address=credentials.get('ip_address', ''),
-                rscp_key=credentials.get('rscp_key', '')
-            )
+            if USE_CLOUD_API:
+                _e3dc_fetcher = E3DCCloudAPI(
+                    username=credentials['username'],
+                    password=credentials['password'],
+                    serial_number=credentials.get('serial_number')
+                )
+            else:
+                _e3dc_fetcher = E3DCFetcher(
+                    username=credentials['username'],
+                    password=credentials['password'],
+                    ip_address=credentials.get('ip_address', ''),
+                    rscp_key=credentials.get('rscp_key', '')
+                )
 
         # Login falls noch nicht eingeloggt
         if not _e3dc_fetcher.logged_in:
@@ -442,6 +476,12 @@ def main():
     host = config.get("host", "localhost")
     port = config.get("port", 5000)
     auto_open = config.get("auto_open_browser", True)
+
+    # API-Modus anzeigen
+    if USE_CLOUD_API:
+        print("✓ Verwende E3DC Cloud API (api.e3dc.com)")
+    else:
+        print("✓ Verwende lokale RSCP-Verbindung")
 
     # Credential-Status prüfen
     if CredentialManager.credentials_exist():

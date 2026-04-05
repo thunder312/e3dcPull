@@ -58,7 +58,8 @@ class CredentialManager:
         password: str,
         ip_address: str,
         rscp_key: str,
-        master_password: str
+        master_password: str,
+        serial_number: str = ""
     ) -> bool:
         """
         Verschlüsselt und speichert E3DC-Credentials.
@@ -69,6 +70,7 @@ class CredentialManager:
             ip_address: IP-Adresse des E3DC-Systems
             rscp_key: RSCP-Passwort
             master_password: Master-Passwort für Verschlüsselung
+            serial_number: Seriennummer des E3DC-Systems (für Cloud API)
 
         Returns:
             True bei Erfolg, False bei Fehler
@@ -86,7 +88,8 @@ class CredentialManager:
                 "username": username,
                 "password": password,
                 "ip_address": ip_address,
-                "rscp_key": rscp_key
+                "rscp_key": rscp_key,
+                "serial_number": serial_number
             }
             credentials_json = json.dumps(credentials_data)
 
