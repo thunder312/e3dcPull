@@ -5,19 +5,21 @@
    ========================================================================== */
 
 :root {
-  --color-bg-primary: #0f0f1a;
-  --color-bg-secondary: #1a1a2e;
-  --color-bg-card: #16213e;
-  --color-text-primary: #e5e7eb;
-  --color-text-secondary: #9ca3af;
-  --color-accent-pv: #f59e0b;
+  /* Eulenwerk Design-System (Kategorie Haus & Technik = Bernstein) – Neutraltöne aus eulenwerk.css,
+     die Energie-Farben (PV/Batterie/Netz/Verbrauch) bleiben semantisch. */
+  --color-bg-primary: var(--ew-bg);
+  --color-bg-secondary: var(--ew-surface);
+  --color-bg-card: var(--ew-surface-2);
+  --color-text-primary: var(--ew-text);
+  --color-text-secondary: var(--ew-text-muted);
+  --color-accent-pv: var(--ew-accent);
   --color-accent-battery: #10b981;
   --color-accent-grid: #6366f1;
   --color-accent-consumption: #3b82f6;
   --color-accent-soc: #06b6d4;
   --border-radius: 12px;
-  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
-  --transition: all 0.3s ease;
+  --shadow: var(--ew-shadow);
+  --transition: all 0.2s ease;
 }
 
 /* ==========================================================================
@@ -77,7 +79,7 @@ body {
   font-size: 2rem;
   font-weight: 700;
   margin: 0 0 0.5rem;
-  background: linear-gradient(135deg, var(--color-accent-pv), var(--color-accent-battery));
+  background: linear-gradient(135deg, var(--ew-accent), var(--ew-accent-light));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -98,7 +100,7 @@ body {
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.3);
   border-radius: 8px;
-  color: #f87171;
+  color: var(--ew-danger);
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
@@ -224,12 +226,12 @@ body {
 }
 
 .card-grid .card-icon {
-  background: rgba(99, 102, 241, 0.15);
+  background: var(--ew-surface-2);
   color: var(--color-accent-grid);
 }
 
 .card-consumption .card-icon {
-  background: rgba(59, 130, 246, 0.15);
+  background: var(--ew-surface-2);
   color: var(--color-accent-consumption);
 }
 
@@ -278,7 +280,7 @@ body {
   align-items: center;
   gap: 0.75rem;
   padding: 1.25rem 1.5rem;
-  background: rgba(59, 130, 246, 0.1);
+  background: var(--ew-accent-soft);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
@@ -345,7 +347,7 @@ body {
   outline: none;
   border-color: var(--color-accent-consumption);
   background: rgba(15, 15, 26, 0.8);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  box-shadow: 0 0 0 3px var(--ew-accent-soft);
 }
 
 .date-separator {
@@ -409,12 +411,12 @@ body {
 }
 
 .resolution-option:hover span {
-  border-color: rgba(59, 130, 246, 0.4);
+  border-color: rgba(240, 180, 41, 0.35);
   color: var(--color-text-primary);
 }
 
 .resolution-option input[type="radio"]:checked + span {
-  background: rgba(59, 130, 246, 0.2);
+  background: var(--ew-accent-soft);
   border-color: var(--color-accent-consumption);
   color: var(--color-accent-consumption);
 }
@@ -447,19 +449,19 @@ body {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--color-accent-consumption) 0%, #2563eb 100%);
+  background: var(--ew-accent); color: var(--ew-text-on-accent);
   color: white;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 4px 12px rgba(240, 180, 41, 0.25);
 }
 
 .btn-primary:hover {
-  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+  background: var(--ew-accent-hover);
+  box-shadow: 0 6px 20px rgba(240, 180, 41, 0.35);
   transform: translateY(-1px);
 }
 
 .btn-secondary {
-  background: rgba(99, 102, 241, 0.1);
+  background: var(--ew-surface-2);
   color: var(--color-accent-grid);
   border: 1px solid rgba(99, 102, 241, 0.3);
 }
@@ -500,13 +502,13 @@ body {
 }
 
 .upload-label:hover {
-  background: rgba(99, 102, 241, 0.1);
+  background: var(--ew-surface-2);
   border-color: rgba(99, 102, 241, 0.5);
   transform: translateY(-2px);
 }
 
 .upload-label.dragover {
-  background: rgba(99, 102, 241, 0.15);
+  background: var(--ew-surface-2);
   border-color: var(--color-accent-grid);
   border-style: solid;
 }
@@ -776,7 +778,7 @@ body {
   font-size: 0.875rem;
   color: var(--color-accent-consumption);
   font-weight: 500;
-  background: rgba(59, 130, 246, 0.1);
+  background: var(--ew-accent-soft);
   padding: 0.375rem 0.75rem;
   border-radius: 6px;
 }
@@ -903,7 +905,7 @@ body {
   .chart-section,
   .chart-box,
   .stats-section {
-    background: #f5f5f5;
+    background: var(--ew-text);
     box-shadow: none;
     border: 1px solid #ddd;
   }
@@ -956,18 +958,18 @@ body {
 .status-error {
   background: rgba(239, 68, 68, 0.15);
   border: 1px solid rgba(239, 68, 68, 0.4);
-  color: #f87171;
+  color: var(--ew-danger);
 }
 
 .status-warning {
   background: rgba(245, 158, 11, 0.15);
   border: 1px solid rgba(245, 158, 11, 0.4);
-  color: #fbbf24;
+  color: var(--ew-accent-light);
 }
 
 .status-info {
-  background: rgba(59, 130, 246, 0.15);
-  border: 1px solid rgba(59, 130, 246, 0.4);
+  background: var(--ew-surface-2);
+  border: 1px solid rgba(240, 180, 41, 0.35);
   color: #60a5fa;
 }
 
@@ -1060,7 +1062,7 @@ body {
   width: 64px;
   height: 64px;
   margin: 0 auto 1.25rem;
-  color: #fbbf24;
+  color: var(--ew-accent-light);
 }
 
 .modal-icon svg {
@@ -1093,9 +1095,12 @@ body {
 }
 
 .modal-icon.modal-icon-danger {
-  color: #f87171;
+  color: var(--ew-danger);
 }
 
 .modal-buttons .btn.hidden {
   display: none;
 }
+
+/* Eulenwerk-Footer */
+.dashboard > .ew-footer { margin-top: 1rem; }

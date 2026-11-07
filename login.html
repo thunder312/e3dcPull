@@ -1,10 +1,12 @@
 <!doctype html>
-<html class="no-js" lang="de">
+<html class="no-js" lang="de" data-eulenwerk="technik">
 
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>E3DC Login</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="css/eulenwerk.css">
   <link rel="stylesheet" href="static/css/login.css">
   <meta name="description" content="E3DC Solar Dashboard - Login">
 
@@ -12,18 +14,16 @@
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon.png">
 
-  <meta name="theme-color" content="#1a1a2e">
+  <meta name="theme-color" content="#121417">
 </head>
 
 <body>
   <div class="login-container">
     <div class="login-box">
       <div class="login-header">
-        <svg class="logo-icon" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0-5a1 1 0 0 1 1 1v2a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1zm0 18a1 1 0 0 1 1 1v2a1 1 0 1 1-2 0v-2a1 1 0 0 1 1-1zm9-9a1 1 0 0 1-1 1h-2a1 1 0 1 1 0-2h2a1 1 0 0 1 1 1zM5 12a1 1 0 0 1-1 1H2a1 1 0 1 1 0-2h2a1 1 0 0 1 1 1z"/>
-        </svg>
+        <img src="icon.svg" alt="" class="ew-login__logo">
         <h1>E3DC Solar Dashboard</h1>
-        <p class="subtitle">Secure Credential Management</p>
+        <p class="subtitle">Anmeldung erforderlich – Zugangsdaten werden lokal verschlüsselt</p>
       </div>
 
       <!-- Status-Nachricht -->
@@ -202,9 +202,10 @@
       </div>
     </div>
 
-    <footer class="login-footer">
-      <p>E3DC Solar Dashboard | Cloud API | Ihre Zugangsdaten werden lokal verschlüsselt gespeichert</p>
-    </footer>
+    <div class="ew-login__foot">
+      <a class="ew-brand" href="https://daniel-ertl.de" target="_blank" rel="noopener"><svg class="ew-logo" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5 C11 12 16 13 24 13 C28 13 30 15 32 16 C34 15 36 13 40 13 C48 13 53 12 56 5"/><circle cx="22" cy="28" r="9"/><circle cx="42" cy="28" r="9"/><circle fill="currentColor" stroke="none" cx="22" cy="28" r="3.2"/><circle fill="currentColor" stroke="none" cx="42" cy="28" r="3.2"/><path d="M29.5 39 L32 42.5 L34.5 39"/><path d="M13 28 V48 C13 54 18 59 24 59 H40 C46 59 51 54 51 48 V28"/><path d="M19 40 C18.5 48 19.5 54 23 59"/><path d="M45 40 C45.5 48 44.5 54 41 59"/></svg>Ein Eulenwerk-Projekt</a>
+      <button type="button" class="ew-btn ew-btn--ghost ew-btn--sm" data-ew-about>Über</button>
+    </div>
   </div>
 
   <script>
@@ -453,6 +454,21 @@
       new LoginManager();
     });
   </script>
+  <script src="js/eulenwerk-about.js"></script>
+  <script>EulenwerkAbout.init({
+  "app": "E3DC Solar Dashboard",
+  "version": "1.0.0",
+  "description": "Web-Dashboard für die Energiedaten eines E3DC-Hauskraftwerks: PV-Leistung, Batteriestand, Netz und Verbrauch live und historisch, Zugangsdaten lokal verschlüsselt.",
+  "stack": [
+    "Python",
+    "Flask",
+    "Chart.js",
+    "E3DC Cloud API",
+    "Vanilla JS"
+  ],
+  "github": "https://github.com/thunder312/e3dcPull",
+  "logo": "icon.svg"
+});</script>
 </body>
 
 </html>
